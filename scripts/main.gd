@@ -89,7 +89,6 @@ var status_label: Label
 var mode_label: Label
 var objective_label: Label
 var interaction_hint_label: Label
-var s08_fade_overlay: ColorRect
 var s06_take_button: Button
 var s06_leave_button: Button
 var chalk_cursor: Control
@@ -207,13 +206,6 @@ func _build_ui() -> void:
 	dialogue_label.add_theme_constant_override("shadow_offset_y", 2)
 	dialogue_label.add_theme_font_size_override("font_size", 19)
 	layer.add_child(dialogue_label)
-	s08_fade_overlay = ColorRect.new()
-	s08_fade_overlay.color = Color("#08111c")
-	s08_fade_overlay.position = Vector2.ZERO
-	s08_fade_overlay.size = Vector2(1152, 648)
-	s08_fade_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	s08_fade_overlay.modulate.a = 0.0
-	layer.add_child(s08_fade_overlay)
 	s06_take_button = Button.new()
 	s06_take_button.text = "拿走原件"
 	s06_take_button.position = Vector2(430, 466)
@@ -1361,7 +1353,9 @@ func _try_s08_chalk_interaction() -> void:
 	objective_label.text = "离开真理美术馆"
 	_update_ui()
 	queue_redraw()
-	_start_s08_exit_fade()
+	# The opened Window hands off to the curtain transition; the gallery becomes the theater.
+	await get_tree().create_timer(1.0).timeout
+	_start_transition()
 
 func _enter_s08_after_s07() -> void:
 	if s08_active:
@@ -1383,37 +1377,6 @@ func _enter_s08_after_s07() -> void:
 	_show_dialogue("蓝湖：我们是不是该再去看看那扇窗？")
 	_update_ui()
 	queue_redraw()
-
-func _start_s08_exit_fade() -> void:
-	if not s08_fade_overlay:
-		_finish_s08_exit()
-		return
-	player.input_locked = true
-	var tween := create_tween()
-	tween.tween_property(s08_fade_overlay, "modulate:a", 1.0, 0.9)
-	tween.tween_callback(_finish_s08_exit)
-
-func _finish_s08_exit() -> void:
-	scene_state = "outside"
-	var gallery := get_node_or_null("TruthGallery")
-	if gallery:
-		gallery.hide()
-	for body in gallery_bodies:
-		if is_instance_valid(body):
-			body.hide()
-			body.collision_layer = 0
-			body.collision_mask = 0
-	blue_lake_active = false
-	chalk_cursor.set_active(false)
-	player.position = Vector2(576, 430)
-	chapter_state.set_map_state(&"Outside_Chapter1")
-	chapter_state.mark_story_event(&"s08_true_exit_reached")
-	_show_dialogue("你终于离开了真理美术馆。")
-	_update_ui()
-	queue_redraw()
-	if s08_fade_overlay:
-		var tween := create_tween()
-		tween.tween_property(s08_fade_overlay, "modulate:a", 0.0, 1.1)
 
 func _enter_s07_after_s06() -> void:
 	if s07_active:
@@ -1701,7 +1664,14 @@ func _finish_transition() -> void:
 	_build_theater()
 	player.position = Vector2(576, 430)
 	player.input_locked = false
-	_show_dialogue("真理剧院：幕布落下，又打开了。你已经进入另一种空间。\nPrototype 0.2 检查流程完成。")
+	if s08_active:
+		chapter_state.set_map_state(&"Theater_Stage_Entrance")
+		chapter_state.mark_story_event(&"s08_true_exit_reached")
+		chapter_state.mark_story_event(&"theater_entered")
+		objective_label.text = "真理美术馆 · 完"
+		_show_dialogue("窗帘被风吹动，拉了上来。不，不是窗帘——是幕布。\n灯光亮起。你站在舞台上。")
+	else:
+		_show_dialogue("真理剧院：幕布落下，又打开了。你已经进入另一种空间。\nPrototype 0.2 检查流程完成。")
 	_update_ui()
 
 func _build_theater() -> void:
@@ -1717,6 +1687,12 @@ func _draw_theater(node: Node2D) -> void:
 	draw_rect(Rect2(205, 235, 742, 225), Color("#172235"))
 	draw_circle(Vector2(576, 280), 75, Color(0.3, 0.65, 0.9, 0.16))
 	draw_string(ThemeDB.fallback_font, Vector2(435, 405), "真理剧院", HORIZONTAL_ALIGNMENT_LEFT, -1, 32, Color("#f0d6a1"))
+	# Stage floor and the spotlight that follows Graham: she arrives being watched.
+	draw_rect(Rect2(80, 460, 992, 60), Color("#4a3426"))
+	if player:
+		var spot_x := player.position.x
+		draw_colored_polygon(PackedVector2Array([Vector2(spot_x - 18.0, 120), Vector2(spot_x + 18.0, 120), Vector2(spot_x + 70.0, 515), Vector2(spot_x - 70.0, 515)]), Color(1.0, 0.94, 0.75, 0.16))
+		draw_circle(Vector2(spot_x, 505), 62.0, Color(1.0, 0.94, 0.75, 0.14))
 
 func _draw_outside(node: Node2D) -> void:
 	draw_rect(Rect2(0, 58, 1152, 590), Color("#b9d4d2"))
@@ -1739,7 +1715,9 @@ func _update_ui() -> void:
 	if not LEGACY_PROTOTYPE_FLOW_ENABLED:
 		var slice_id := "S08" if s08_active else ("S07" if s07_active else ("S06" if s06_active else ("S05" if s05_active else ("S04" if s04_active else ("S03" if s03_active else ("S02" if s02_active else "S01"))))))
 		mode_label.text = "CHAPTER 1 / " + slice_id
-		if s08_active:
+		if scene_state == "theater":
+			status_label.text = "真理剧院 / 舞台"
+		elif s08_active:
 			status_label.text = "真理美术馆 / 真正出口"
 		elif s07_active:
 			status_label.text = "真理美术馆 / 重新观看"
