@@ -1011,6 +1011,14 @@ func _try_s04_interact() -> void:
 			chapter_state.mark_event(&"s04_pigment_applied")
 			_show_dialogue("你把荧光剂涂在了身上。按 Space 使用蓝湖，观察那盏灯。")
 			_show_space_prompt()
+	elif object_name == "Lamp":
+		if not s04_pigment_applied:
+			_show_dialogue("感应灯。我修过这套灯，它会跟着观众的视线变亮。")
+		elif not s04_lamp_observed:
+			_show_dialogue("灯本身看不出什么。\nBlue Lake：按 Space 让我来看，再用粉笔点一下灯。")
+			_show_space_prompt()
+		else:
+			_show_dialogue("灯边有荧光的痕迹。旁边的灯控可以把它关掉。")
 	elif object_name == "LightSwitch":
 		if not s04_lamp_observed:
 			_show_dialogue("先用蓝湖观察灯具，再操作灯控。")
@@ -1039,6 +1047,7 @@ func _try_s04_chalk_interaction() -> void:
 	if chalk_hover_target != "Lamp" or not s04_pigment_applied:
 		return
 	s04_lamp_observed = true
+	_hide_space_prompt()
 	blue_lake_active = false
 	chalk_cursor.set_active(false)
 	visual_mode = "Lamp Layer"
