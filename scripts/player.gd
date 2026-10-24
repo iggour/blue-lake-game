@@ -4,7 +4,7 @@ class_name GrahamSteel
 
 @export var speed := 230.0
 @export var ground_y := 520.0
-@export var ground_top := 482.0
+@export var ground_top := 410.0
 var input_locked := false
 
 func _ready() -> void:

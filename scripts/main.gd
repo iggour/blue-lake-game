@@ -232,8 +232,9 @@ func _build_gallery() -> void:
 	# The left boundary is the visible, collision-backed gate; the right boundary
 	# is aligned to the visible dead-end wall instead of leaving a side gap.
 	_add_wall(Vector2(1098, 342), Vector2(26, 496))
-	# This center collision remains part of the current mirror-space design.
-	gate_body = _add_wall(Vector2(520, 315), Vector2(24, 410))
+	# The S01 gate is the door at the far end of the first hall; this keeps the
+	# space behind it closed until the entrance observations are done.
+	gate_body = _add_wall(Vector2(1050, 315), Vector2(24, 410))
 	west_exit_body = _add_wall(Vector2(32, 315), Vector2(24, 410))
 	# Objects are simple drawn nodes with interaction rectangles.
 	mirror_node = _make_object("Mirror", Vector2(1010, 410), Color("#426b82"), "镜子")
@@ -245,10 +246,11 @@ func _build_gallery() -> void:
 		{"name":"Window", "position":Vector2(840,520), "radius":105.0}
 	]
 	s01_interactables = [
-		{"name":"EntrancePhoto", "position":Vector2(110,520), "radius":72.0},
-		{"name":"FirstExhibit", "position":Vector2(265,520), "radius":72.0},
-		{"name":"SecondExhibit", "position":Vector2(408,520), "radius":72.0},
-		{"name":"ExitSign", "position":Vector2(470,520), "radius":72.0}
+		# Each sits under its wall exhibit; hint_y puts "E 观察" just below the title card.
+		{"name":"EntrancePhoto", "position":Vector2(170,440), "radius":70.0, "hint_y":376.0},
+		{"name":"FirstExhibit", "position":Vector2(390,440), "radius":70.0, "hint_y":376.0},
+		{"name":"SecondExhibit", "position":Vector2(608,440), "radius":70.0, "hint_y":376.0},
+		{"name":"ExitSign", "position":Vector2(955,440), "radius":50.0, "hint_y":376.0}
 	]
 	s02_interactables = [
 		{"name":"SecurityGuard", "position":Vector2(700,520), "radius":72.0},
@@ -305,7 +307,8 @@ func _draw_gallery(room: Node2D) -> void:
 	draw_rect(Rect2(0, 58, 1152, 590), Color("#202b3a"))
 	draw_rect(Rect2(62, 120, 980, 408), Color("#344354"))
 	draw_rect(Rect2(84, 140, 936, 368), Color("#2b3747"))
-	draw_line(Vector2(84, 330), Vector2(1020, 330), Color("#596b7a"), 2.0)
+	# Floor: Graham walks here, below the hung exhibits (player.ground_top keeps her off the wall).
+	draw_rect(Rect2(84, 372, 936, 136), Color("#333f4c"))
 	draw_rect(Rect2(1085, 112, 26, 408), Color("#202c3a"), true)
 	if LEGACY_PROTOTYPE_FLOW_ENABLED:
 		draw_string(ThemeDB.fallback_font, Vector2(108, 175), "镜子展厅", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color("#98aabd"))
@@ -322,17 +325,6 @@ func _draw_gallery(room: Node2D) -> void:
 			draw_arc(Vector2(840, 205), 68.0, 0.0, TAU, 32, Color("#bfe8ff"), 2.0)
 		if mirror_solved and handle_found and not window_open:
 			draw_string(ThemeDB.fallback_font, Vector2(748, 330), "这里可以打开", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color("#f6e5a7"))
-	# Full-height collision-backed divider. Its visible door aligns with the floor path.
-	if not s01_gate_open:
-		draw_rect(Rect2(506, 112, 28, 408), Color("#202c3a"), true)
-		draw_rect(Rect2(482, 360, 76, 160), Color("#445866"), true)
-		draw_rect(Rect2(491, 370, 58, 150), Color("#1c2934"), true)
-		draw_line(Vector2(491, 520), Vector2(549, 520), Color("#9aabac"), 3.0)
-		draw_circle(Vector2(540, 445), 4.0, Color("#d9c997"))
-	else:
-		draw_rect(Rect2(506, 112, 28, 350), Color("#202c3a"), true)
-		draw_rect(Rect2(506, 552, 28, 38), Color("#202c3a"), true)
-		draw_rect(Rect2(482, 462, 76, 90), Color("#445866"), false, 3.0)
 	# The old left exit is a second real gate, opened after the guard is revisited.
 	if is_instance_valid(west_exit_body) and west_exit_body.collision_layer > 0:
 		draw_rect(Rect2(20, 112, 24, 408), Color("#202c3a"), true)
@@ -369,29 +361,34 @@ func _draw_gallery(room: Node2D) -> void:
 
 func _draw_s01_gallery() -> void:
 	# S01 only exposes the entrance and first viewing area. Later Slice objects stay hidden.
+	# Exhibits hang on the wall at eye level; each one's E spot is the floor right below it.
 	draw_string(ThemeDB.fallback_font, Vector2(116, 175), "入口大厅", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color("#b8c7d4"))
-	draw_string(ThemeDB.fallback_font, Vector2(300, 175), "第一展厅", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color("#b8c7d4"))
-	draw_string(ThemeDB.fallback_font, Vector2(422, 175), "出口方向", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color("#b8c7d4"))
+	draw_string(ThemeDB.fallback_font, Vector2(340, 175), "第一展厅", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color("#b8c7d4"))
 	# The old bar photograph is the visual anchor for how the player arrived.
-	draw_rect(Rect2(128, 208, 112, 84), Color("#c9ae78"), true)
-	draw_rect(Rect2(137, 217, 94, 66), Color("#667989"), true)
-	draw_rect(Rect2(145, 226, 78, 48), Color("#8ca0a8"), true)
-	draw_line(Vector2(152, 263), Vector2(215, 235), Color("#d5c38e"), 4.0)
-	draw_string(ThemeDB.fallback_font, Vector2(143, 320), "旧照片", HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color("#e8dfc8"))
+	draw_rect(Rect2(114, 240, 112, 84), Color("#c9ae78"), true)
+	draw_rect(Rect2(123, 249, 94, 66), Color("#667989"), true)
+	draw_rect(Rect2(131, 258, 78, 48), Color("#8ca0a8"), true)
+	draw_line(Vector2(138, 295), Vector2(201, 267), Color("#d5c38e"), 4.0)
+	draw_string(ThemeDB.fallback_font, Vector2(146, 352), "旧照片", HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color("#e8dfc8"))
 	# A quiet placeholder exhibit establishes that this is a gallery, not a menu room.
-	draw_rect(Rect2(215, 204, 116, 116), Color("#c7a56f"), true)
-	draw_rect(Rect2(225, 214, 96, 96), Color("#777f78"), true)
-	draw_circle(Vector2(265, 254), 18.0, Color("#c9bda1"))
-	draw_line(Vector2(238, 286), Vector2(308, 235), Color("#4f5d60"), 8.0)
-	draw_string(ThemeDB.fallback_font, Vector2(207, 345), "《观看的永恒》", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color("#e8dfc8"))
-	draw_rect(Rect2(352, 204, 112, 116), Color("#c7a56f"), true)
-	draw_rect(Rect2(362, 214, 92, 96), Color("#777f78"), true)
-	draw_circle(Vector2(408, 252), 19.0, Color("#c9bda1"))
-	draw_string(ThemeDB.fallback_font, Vector2(350, 345), "《这不是一只眼睛》", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#e8dfc8"))
-	# Exit sign points into the museum; the actual gate remains shut until the entrance observations are complete.
-	draw_rect(Rect2(445, 215, 44, 95), Color("#2a3540"), true)
-	draw_string(ThemeDB.fallback_font, Vector2(402, 250), "出口 →", HORIZONTAL_ALIGNMENT_LEFT, -1, 20, Color("#d9d4b6"))
-	draw_string(ThemeDB.fallback_font, Vector2(396, 345), "门还开不了", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#aab8c2"))
+	draw_rect(Rect2(332, 214, 116, 116), Color("#c7a56f"), true)
+	draw_rect(Rect2(342, 224, 96, 96), Color("#777f78"), true)
+	draw_circle(Vector2(390, 264), 18.0, Color("#c9bda1"))
+	draw_line(Vector2(363, 296), Vector2(433, 245), Color("#4f5d60"), 8.0)
+	draw_string(ThemeDB.fallback_font, Vector2(337, 352), "《观看的永恒》", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color("#e8dfc8"))
+	draw_rect(Rect2(552, 214, 112, 116), Color("#c7a56f"), true)
+	draw_rect(Rect2(562, 224, 92, 96), Color("#777f78"), true)
+	draw_circle(Vector2(608, 262), 19.0, Color("#c9bda1"))
+	draw_string(ThemeDB.fallback_font, Vector2(546, 352), "《这不是一只眼睛》", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#e8dfc8"))
+	# The exit door stands at the far end of the hall; it opens once the entrance has been read.
+	draw_string(ThemeDB.fallback_font, Vector2(944, 212), "出口 →", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color("#d9d4b6"))
+	draw_rect(Rect2(938, 222, 84, 150), Color("#445866"), true)
+	if not s01_gate_open:
+		draw_rect(Rect2(947, 231, 66, 141), Color("#1c2934"), true)
+		draw_circle(Vector2(1003, 305), 4.0, Color("#d9c997"))
+	else:
+		draw_rect(Rect2(947, 231, 66, 141), Color("#0e1620"), true)
+		draw_colored_polygon(PackedVector2Array([Vector2(947, 372), Vector2(1013, 372), Vector2(1030, 420), Vector2(930, 420)]), Color(0.75, 0.85, 0.95, 0.10))
 	draw_string(ThemeDB.fallback_font, Vector2(112, 480), "入口", HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color("#8fa1af"))
 
 func _draw_s02_gallery() -> void:
@@ -807,7 +804,7 @@ func _try_interact() -> void:
 	var nearest := ""
 	var best := 99999.0
 	for item in interactables:
-		var distance: float = player.position.distance_to(item.position)
+		var distance: float = absf(player.position.x - item.position.x)
 		if distance < item.radius and distance < best:
 			best = distance
 			nearest = item.name
@@ -1437,7 +1434,7 @@ func _update_s02_loop_trigger() -> void:
 		return
 	if not chapter_state.has_event(&"s02_guard_observed"):
 		return
-	if player.position.distance_to(Vector2(930, 500)) > 72.0:
+	if absf(player.position.x - 930.0) > 72.0:
 		return
 	s02_loop_triggered = true
 	s02_loop_count += 1
@@ -1469,7 +1466,7 @@ func _try_complete_s02() -> void:
 func _update_route_transitions() -> void:
 	if not player or scene_state != "gallery":
 		return
-	if s01_active and s01_completion_started and player.position.x >= 548.0:
+	if s01_active and s01_completion_started and player.position.x >= 1012.0:
 		_enter_s02_after_s01()
 		return
 	if s03_active and s03_mirror_intervened and not s03_mirror_crossed and player.position.x >= 1000.0:
@@ -1510,7 +1507,7 @@ func _get_nearest_s02_interactable() -> Dictionary:
 	var nearest: Dictionary = {}
 	var best := 99999.0
 	for item in s02_interactables:
-		var distance: float = player.position.distance_to(item.position)
+		var distance: float = absf(player.position.x - item.position.x)
 		if distance < item.radius and distance < best:
 			best = distance
 			nearest = item
@@ -1520,7 +1517,7 @@ func _get_nearest_s03_interactable() -> Dictionary:
 	var nearest: Dictionary = {}
 	var best := 99999.0
 	for item in s03_interactables:
-		var distance: float = player.position.distance_to(item.position)
+		var distance: float = absf(player.position.x - item.position.x)
 		if distance < item.radius and distance < best:
 			best = distance
 			nearest = item
@@ -1530,7 +1527,7 @@ func _get_nearest_s04_interactable() -> Dictionary:
 	var nearest: Dictionary = {}
 	var best := 99999.0
 	for item in s04_interactables:
-		var distance: float = player.position.distance_to(item.position)
+		var distance: float = absf(player.position.x - item.position.x)
 		if distance < item.radius and distance < best:
 			best = distance
 			nearest = item
@@ -1540,7 +1537,7 @@ func _get_nearest_s05_interactable() -> Dictionary:
 	var nearest: Dictionary = {}
 	var best := 99999.0
 	for item in s05_interactables:
-		var distance: float = player.position.distance_to(item.position)
+		var distance: float = absf(player.position.x - item.position.x)
 		if distance < item.radius and distance < best:
 			best = distance
 			nearest = item
@@ -1550,7 +1547,7 @@ func _get_nearest_s06_interactable() -> Dictionary:
 	var nearest: Dictionary = {}
 	var best := 99999.0
 	for item in s06_interactables:
-		var distance: float = player.position.distance_to(item.position)
+		var distance: float = absf(player.position.x - item.position.x)
 		if distance < item.radius and distance < best:
 			best = distance
 			nearest = item
@@ -1560,7 +1557,7 @@ func _get_nearest_s07_interactable() -> Dictionary:
 	var nearest: Dictionary = {}
 	var best := 99999.0
 	for item in s07_interactables:
-		var distance: float = player.position.distance_to(item.position)
+		var distance: float = absf(player.position.x - item.position.x)
 		if distance < item.radius and distance < best:
 			best = distance
 			nearest = item
@@ -1570,7 +1567,7 @@ func _get_nearest_s08_interactable() -> Dictionary:
 	var nearest: Dictionary = {}
 	var best := 99999.0
 	for item in s08_interactables:
-		var distance: float = player.position.distance_to(item.position)
+		var distance: float = absf(player.position.x - item.position.x)
 		if distance < item.radius and distance < best:
 			best = distance
 			nearest = item
@@ -1783,7 +1780,8 @@ func _update_interaction_hint() -> void:
 		interaction_hint_label.text = "E 借荧光剂"
 	elif s04_active and nearest.get("name", "") == "PigmentStation":
 		interaction_hint_label.text = "E 涂抹荧光剂" if s04_pigment_borrowed else "先向修复师借荧光剂"
-	interaction_hint_label.position = nearest.position + Vector2(-28, -nearest.radius * 0.55)
+	var hint_y: float = nearest.get("hint_y", nearest.position.y - nearest.radius * 0.55)
+	interaction_hint_label.position = Vector2(nearest.position.x - 28.0, hint_y)
 	interaction_hint_label.show()
 
 func _update_chalk_hover() -> void:
@@ -1842,7 +1840,7 @@ func _get_nearest_interactable() -> Dictionary:
 	var nearest: Dictionary = {}
 	var best := 99999.0
 	for item in interactables:
-		var distance: float = player.position.distance_to(item.position)
+		var distance: float = absf(player.position.x - item.position.x)
 		if distance < item.radius and distance < best:
 			best = distance
 			nearest = item
@@ -1852,7 +1850,7 @@ func _get_nearest_s01_interactable() -> Dictionary:
 	var nearest: Dictionary = {}
 	var best := 99999.0
 	for item in s01_interactables:
-		var distance: float = player.position.distance_to(item.position)
+		var distance: float = absf(player.position.x - item.position.x)
 		if distance < item.radius and distance < best:
 			best = distance
 			nearest = item
