@@ -11,6 +11,12 @@ const S03_MIRROR_CENTER := Vector2(983, 286)
 const S04_LAMP_CENTER := Vector2(500, 300)
 # 《窗》 hangs on the wall here in S04 and S05 (same room, same painting).
 const S05_WINDOW_CENTER := Vector2(590, 285)
+# S06 central platform room: the empty 《看见》 plinth, 《凝视》's mechanical eye, and the back of 《窗》.
+const S06_PLATFORM_CENTER := Vector2(560, 282)
+const S06_GAZE_EYE := Vector2(330, 290)
+const S06_WINDOW_CENTER := Vector2(900, 285)
+# Where 《凝视》 looks, in the order the Chalk turns it; index 3 is the platform.
+const S06_GAZE_PLACES := ["天花板", "《盲》", "地面", "中央展台"]
 
 # Prototype 0.2 is retained as a reference implementation, not as the default
 # Chapter 1 route. Slice-specific content will be reattached deliberately.
@@ -58,6 +64,9 @@ var s05_interactables: Array[Dictionary] = []
 var s06_active := false
 var s06_platform_observed := false
 var s06_sensor_revealed := false
+# Gaze puzzle: Blue Lake alone sees only the outline; 《凝视》 alone sees only colour.
+var s06_contour_seen := false
+var s06_gaze_index := 0
 var s06_choice_visible := false
 var s06_stolen := false
 var s06_chase_active := false
@@ -260,16 +269,12 @@ func _build_gallery() -> void:
 		{"name":"ExitSign", "position":Vector2(955,440), "radius":50.0, "hint_y":376.0}
 	]
 	s02_interactables = [
-		# Left to right: paintings, guard, sculptures, then the dead-end mirror. Ranges do not overlap.
-		{"name":"PearlHeadphones", "position":Vector2(210,440), "radius":50.0, "hint_y":376.0},
-		{"name":"StarryNerves", "position":Vector2(340,440), "radius":50.0, "hint_y":376.0},
-		{"name":"MirrorInMirror", "position":Vector2(455,440), "radius":50.0, "hint_y":376.0},
+		# Left to right: 《镜中镜》, 《光》, guard, 《机械维纳斯》, then the dead-end mirror.
+		# Each piece hints at this hall's puzzle (mirrors, split light, what is missing).
+		{"name":"MirrorInMirror", "position":Vector2(260,440), "radius":50.0, "hint_y":376.0},
+		{"name":"SculptureLight", "position":Vector2(420,440), "radius":35.0, "hint_y":398.0},
 		{"name":"SecurityGuard", "position":Vector2(545,440), "radius":35.0, "hint_y":258.0},
-		{"name":"SculptureGaze", "position":Vector2(625,440), "radius":30.0, "hint_y":398.0},
-		{"name":"SculptureVenus", "position":Vector2(700,440), "radius":35.0, "hint_y":398.0},
-		{"name":"SculptureTwins", "position":Vector2(775,440), "radius":30.0, "hint_y":398.0},
-		{"name":"SculptureLight", "position":Vector2(835,440), "radius":27.0, "hint_y":398.0},
-		{"name":"SculptureBlind", "position":Vector2(890,440), "radius":27.0, "hint_y":398.0},
+		{"name":"SculptureVenus", "position":Vector2(700,440), "radius":40.0, "hint_y":398.0},
 		{"name":"DeadEnd", "position":Vector2(983,440), "radius":38.0, "hint_y":398.0}
 	]
 	# S03 happens in the same hall as S02; the dead-end mirror is now the puzzle.
@@ -286,15 +291,23 @@ func _build_gallery() -> void:
 		{"name":"BlockedWindow", "position":Vector2(590,440), "radius":45.0, "hint_y":376.0},
 		{"name":"Lamp", "position":Vector2(500,440), "radius":28.0, "hint_y":376.0},
 		{"name":"LightSwitch", "position":Vector2(440,440), "radius":25.0, "hint_y":376.0},
-		{"name":"Restorer", "position":Vector2(340,440), "radius":40.0, "hint_y":258.0},
-		{"name":"PigmentStation", "position":Vector2(250,440), "radius":35.0, "hint_y":398.0}
+		{"name":"PigmentStation", "position":Vector2(340,440), "radius":35.0, "hint_y":398.0},
+		{"name":"Restorer", "position":Vector2(255,440), "radius":40.0, "hint_y":258.0},
+		# Exhibits of this room: the restorer studies 《星空下的神经》; the visitor's side has
+		# the face that changes (《戴珍珠耳机的少女》) and the pair's own work (《双生》).
+		{"name":"StarryNerves", "position":Vector2(150,440), "radius":45.0, "hint_y":376.0},
+		{"name":"PearlHeadphones", "position":Vector2(870,440), "radius":40.0, "hint_y":376.0},
+		{"name":"SculptureTwins", "position":Vector2(950,440), "radius":28.0, "hint_y":398.0}
 	]
 	s05_interactables = [
 		{"name":"Window", "position":Vector2(590,440), "radius":60.0, "hint_y":376.0}
 	]
 	s06_interactables = [
-		{"name":"CentralPlatform", "position":Vector2(576,520), "radius":100.0},
-		{"name":"EscapeWindow", "position":Vector2(980,520), "radius":82.0}
+		# Left to right: 《盲》, 《凝视》, the 《看见》 platform, and 《窗》 on the wall (where Graham came in).
+		{"name":"Blind", "position":Vector2(180,440), "radius":35.0, "hint_y":398.0},
+		{"name":"Gaze", "position":Vector2(330,440), "radius":40.0, "hint_y":398.0},
+		{"name":"CentralPlatform", "position":Vector2(560,440), "radius":60.0, "hint_y":398.0},
+		{"name":"EscapeWindow", "position":Vector2(900,440), "radius":50.0, "hint_y":376.0}
 	]
 	# S07 items belong to one of the two revisited rooms.
 	s07_interactables = [
@@ -306,6 +319,11 @@ func _build_gallery() -> void:
 			var s07_item: Dictionary = item.duplicate()
 			s07_item["room"] = "hall"
 			s07_interactables.append(s07_item)
+	for item in s04_interactables:
+		if item.name in ["StarryNerves", "PearlHeadphones", "SculptureTwins"]:
+			var s07_gallery_item: Dictionary = item.duplicate()
+			s07_gallery_item["room"] = "gallery"
+			s07_interactables.append(s07_gallery_item)
 	s08_interactables = [
 		{"name":"FinalWindow", "position":Vector2(590,440), "radius":60.0, "hint_y":376.0}
 	]
@@ -403,48 +421,37 @@ func _draw_s01_gallery() -> void:
 	draw_string(ThemeDB.fallback_font, Vector2(112, 480), "入口", HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color("#8fa1af"))
 
 func _draw_s02_gallery() -> void:
-	# One continuous hall, left to right: entrance, paintings, guard, sculptures, dead-end mirror.
-	draw_string(ThemeDB.fallback_font, Vector2(116, 175), "画作展厅", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color("#b8c7d4"))
-	draw_string(ThemeDB.fallback_font, Vector2(640, 175), "雕塑展厅", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color("#b8c7d4"))
+	# One continuous hall, left to right: entrance, 《镜中镜》, 《光》, guard, 《机械维纳斯》, dead-end mirror.
+	draw_string(ThemeDB.fallback_font, Vector2(116, 175), "第二展厅", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color("#b8c7d4"))
 	# The hall's own entrance: the loop keeps returning Graham to this doorway.
 	draw_rect(Rect2(92, 262, 50, 110), Color("#445866"), true)
 	draw_rect(Rect2(99, 270, 36, 102), Color("#0e1620"), true)
 	draw_string(ThemeDB.fallback_font, Vector2(98, 392), "入口", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#8fa1af"))
-	# Paintings hang at eye level; E is on the floor right below each title.
-	var painting_x := [210.0, 340.0, 455.0]
-	var painting_titles := ["《戴珍珠耳机的少女》", "《星空下的神经》", "《镜中镜》"]
-	for index in range(painting_x.size()):
-		var x: float = painting_x[index]
-		draw_rect(Rect2(x - 50.0, 230, 100, 100), Color("#b49464"), true)
-		draw_rect(Rect2(x - 42.0, 238, 84, 84), Color("#66747a"), true)
-		draw_string(ThemeDB.fallback_font, Vector2(x - painting_titles[index].length() * 6.5, 352), painting_titles[index], HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color("#e8dfc8"))
-	draw_circle(Vector2(210, 268), 15.0, Color("#c9bda1"))
-	draw_circle(Vector2(224, 270), 4.0, Color("#e8e2d0"))
-	draw_arc(Vector2(340, 280), 26.0, 0.0, 5.2, 24, Color("#c8c1a8"), 3.0)
-	draw_arc(Vector2(340, 280), 13.0, 1.0, 6.0, 18, Color("#c8c1a8"), 2.0)
-	draw_rect(Rect2(435, 252, 40, 56), Color("#426b82"), true)
-	draw_rect(Rect2(445, 264, 20, 32), Color("#5d8aa2"), true)
+	# 《镜中镜》: a painted mirror whose reflection has one more door than the room.
+	draw_rect(Rect2(210, 230, 100, 100), Color("#b49464"), true)
+	draw_rect(Rect2(218, 238, 84, 84), Color("#66747a"), true)
+	draw_rect(Rect2(240, 252, 40, 56), Color("#426b82"), true)
+	draw_rect(Rect2(250, 264, 20, 32), Color("#5d8aa2"), true)
+	draw_rect(Rect2(255, 278, 10, 18), Color(0.85, 0.94, 1.0, 0.75), true)
+	draw_string(ThemeDB.fallback_font, Vector2(228, 352), "《镜中镜》", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color("#e8dfc8"))
+	# Sculptures stand on pedestals against the wall; titles sit on the floor edge in front.
+	draw_rect(Rect2(400, 326, 40, 46), Color("#4b5966"), true)
+	draw_colored_polygon(PackedVector2Array([Vector2(420, 290), Vector2(437, 324), Vector2(403, 324)]), Color("#c9dff0"))
+	draw_line(Vector2(437, 312), Vector2(458, 300), Color(0.95, 0.6, 0.6, 0.7), 2.0)
+	draw_line(Vector2(437, 314), Vector2(460, 310), Color(0.6, 0.9, 0.6, 0.7), 2.0)
+	draw_line(Vector2(437, 316), Vector2(458, 320), Color(0.6, 0.7, 1.0, 0.7), 2.0)
+	draw_string(ThemeDB.fallback_font, Vector2(402, 392), "《光》", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#e8dfc8"))
 	# The guard stands at the back of the floor and points right, toward the dead end.
 	draw_circle(Vector2(545, 322), 16.0, Color("#bba88c"))
 	draw_rect(Rect2(528, 338, 34, 60), Color("#566b7a"), true)
 	draw_line(Vector2(562, 352), Vector2(592, 340), Color("#bba88c"), 5.0)
 	draw_string(ThemeDB.fallback_font, Vector2(526, 290), "保安 →", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color("#e8dfc8"))
-	# Sculptures stand on pedestals against the wall; titles sit on the floor edge in front.
-	var sculpture_x := [625.0, 700.0, 775.0, 835.0, 890.0]
-	var sculpture_titles := ["《凝视》", "《机械维纳斯》", "《双生》", "《光》", "《盲》"]
-	for index in range(sculpture_x.size()):
-		var x: float = sculpture_x[index]
-		draw_rect(Rect2(x - 20.0, 326, 40, 46), Color("#4b5966"), true)
-		draw_string(ThemeDB.fallback_font, Vector2(x - sculpture_titles[index].length() * 6.0, 392), sculpture_titles[index], HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#e8dfc8"))
-	draw_circle(Vector2(625, 300), 24.0, Color("#64747b"))
-	draw_circle(Vector2(625, 300), 11.0, Color("#172431"))
-	draw_circle(Vector2(700, 280), 12.0, Color("#9aa6ab"))
-	draw_rect(Rect2(690, 292, 20, 34), Color("#9aa6ab"), true)
-	draw_circle(Vector2(767, 304), 12.0, Color("#b9aa8d"))
-	draw_circle(Vector2(783, 304), 12.0, Color("#b9aa8d"))
-	draw_colored_polygon(PackedVector2Array([Vector2(835, 290), Vector2(852, 324), Vector2(818, 324)]), Color("#c9dff0"))
-	draw_circle(Vector2(890, 300), 16.0, Color("#79868b"))
-	draw_rect(Rect2(880, 314, 20, 12), Color("#79868b"), true)
+	draw_rect(Rect2(680, 326, 40, 46), Color("#4b5966"), true)
+	draw_circle(Vector2(700, 272), 12.0, Color("#9aa6ab"))
+	draw_circle(Vector2(704, 270), 3.0, Color("#1b2633"))
+	draw_rect(Rect2(690, 284, 20, 42), Color("#9aa6ab"), true)
+	draw_rect(Rect2(710, 288, 8, 20), Color("#9aa6ab"), true)
+	draw_string(ThemeDB.fallback_font, Vector2(658, 392), "《机械维纳斯》", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#e8dfc8"))
 	# The far right is where the guard sends you; past the sculptures the floor loops back.
 	draw_rect(Rect2(930, 372, 90, 136), Color("#2c3845"), true)
 	# The end wall carries a full-length mirror, not an invisible barrier.
@@ -510,16 +517,32 @@ func _draw_s04_gallery() -> void:
 	draw_circle(Vector2(visitor_x - 6.0, 319), 2.5, Color("#5a6670"))
 	draw_circle(Vector2(visitor_x + 6.0, 319), 2.5, Color("#5a6670"))
 	draw_string(ThemeDB.fallback_font, Vector2(visitor_x - 20.0, 290), "参观者", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color("#e8dfc8"))
-	# Restorer at her work, with the pigment station right beside her.
-	draw_circle(Vector2(340, 322), 16.0, Color("#cba98a"))
-	draw_rect(Rect2(322, 338, 36, 60), Color("#b26b5e"), true)
-	draw_rect(Rect2(328, 352, 24, 10), Color("#e3c77d"), true)
-	draw_line(Vector2(304, 360), Vector2(286, 340), Color("#bfe8ff"), 4.0)
-	draw_string(ThemeDB.fallback_font, Vector2(320, 290), "修复师", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color("#e8dfc8"))
-	draw_rect(Rect2(222, 340, 56, 32), Color("#665d50"), true)
-	draw_rect(Rect2(226, 332, 48, 10), Color("#c8b98d"), true)
-	draw_circle(Vector2(250, 324), 7.0, Color("#bfe8ff"))
-	draw_string(ThemeDB.fallback_font, Vector2(226, 392), "荧光剂台", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#e8dfc8"))
+	# 《星空下的神经》: the painting the restorer keeps studying.
+	draw_rect(Rect2(100, 230, 100, 100), Color("#b49464"), true)
+	draw_rect(Rect2(108, 238, 84, 84), Color("#66747a"), true)
+	draw_arc(Vector2(150, 280), 26.0, 0.0, 5.2, 24, Color("#c8c1a8"), 3.0)
+	draw_arc(Vector2(150, 280), 13.0, 1.0, 6.0, 18, Color("#c8c1a8"), 2.0)
+	draw_string(ThemeDB.fallback_font, Vector2(105, 352), "《星空下的神经》", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#e8dfc8"))
+	# The restorer faces it, brush raised; the pigment station stands right beside her.
+	draw_circle(Vector2(255, 322), 16.0, Color("#cba98a"))
+	draw_rect(Rect2(237, 338, 36, 60), Color("#b26b5e"), true)
+	draw_rect(Rect2(243, 352, 24, 10), Color("#e3c77d"), true)
+	draw_line(Vector2(237, 350), Vector2(216, 330), Color("#bfe8ff"), 4.0)
+	draw_string(ThemeDB.fallback_font, Vector2(235, 290), "修复师", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color("#e8dfc8"))
+	draw_rect(Rect2(312, 340, 56, 32), Color("#665d50"), true)
+	draw_rect(Rect2(316, 332, 48, 10), Color("#c8b98d"), true)
+	draw_circle(Vector2(340, 324), 7.0, Color("#bfe8ff"))
+	draw_string(ThemeDB.fallback_font, Vector2(316, 392), "荧光剂台", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#e8dfc8"))
+	# 《戴珍珠耳机的少女》 and 《双生》 on the visitor's side of the room.
+	draw_rect(Rect2(825, 240, 90, 90), Color("#b49464"), true)
+	draw_rect(Rect2(832, 247, 76, 76), Color("#66747a"), true)
+	draw_circle(Vector2(870, 280), 14.0, Color("#c9bda1"))
+	draw_circle(Vector2(883, 282), 4.0, Color("#e8e2d0"))
+	draw_string(ThemeDB.fallback_font, Vector2(816, 352), "《戴珍珠耳机的少女》", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("#e8dfc8"))
+	draw_rect(Rect2(930, 326, 40, 46), Color("#4b5966"), true)
+	draw_circle(Vector2(942, 304), 12.0, Color("#b9aa8d"))
+	draw_circle(Vector2(958, 304), 12.0, Color("#b9aa8d"))
+	draw_string(ThemeDB.fallback_font, Vector2(932, 392), "《双生》", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#e8dfc8"))
 	if s04_visitor_observed and not s04_visitor_recognized:
 		draw_string(ThemeDB.fallback_font, Vector2(visitor_x - 42.0, 236), "她仍在寻找你。", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color("#d6e8f0"))
 	if s04_lights_off:
@@ -559,30 +582,83 @@ func _draw_s05_gallery() -> void:
 		draw_string(ThemeDB.fallback_font, w + Vector2(75, -5), "这不是出口。", HORIZONTAL_ALIGNMENT_LEFT, -1, 17, Color("#f6e5a7"))
 
 func _draw_s06_gallery() -> void:
-	# S06 starts with an empty platform. Blue Lake reveals what ordinary sight omits.
+	# S06 starts with an empty platform. Two ways of seeing, laid on top of each other, reveal it.
 	draw_string(ThemeDB.fallback_font, Vector2(116, 175), "中央展台", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color("#b8c7d4"))
-	draw_rect(Rect2(922, 404, 116, 116), Color("#c7a56f"), true)
-	draw_rect(Rect2(932, 414, 96, 96), Color("#5ca8c7"), true)
-	draw_line(Vector2(980, 414), Vector2(980, 510), Color("#d7f3ff"), 4.0)
-	draw_string(ThemeDB.fallback_font, Vector2(949, 540), "窗", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color("#e8dfc8"))
-	draw_rect(Rect2(380, 235, 392, 128), Color("#252f3c"), true)
-	draw_rect(Rect2(395, 250, 362, 98), Color("#566674"), false, 3.0)
-	draw_line(Vector2(410, 330), Vector2(742, 330), Color("#9eafb7"), 2.0)
-	draw_string(ThemeDB.fallback_font, Vector2(478, 305), "看见即存在", HORIZONTAL_ALIGNMENT_LEFT, -1, 26, Color("#d6c79f"))
-	draw_string(ThemeDB.fallback_font, Vector2(462, 410), "普通视角：展台是空的。", HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color("#aab8c2"))
-	if s06_active and blue_lake_active and not s06_sensor_revealed:
-		draw_circle(Vector2(576, 292), 54.0, Color(0.35, 0.82, 0.96, 0.10))
-		draw_arc(Vector2(576, 292), 54.0, 0.0, TAU, 32, Color(0.55, 0.88, 1.0, 0.42), 2.0)
-		draw_string(ThemeDB.fallback_font, Vector2(458, 450), "蓝湖视角：空白处有轮廓。", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color("#bfe8ff"))
-	if s06_sensor_revealed:
-		draw_circle(Vector2(576, 292), 26.0, Color("#6ec9e8"))
-		draw_circle(Vector2(576, 292), 12.0, Color("#dff8ff"))
-		draw_arc(Vector2(576, 292), 42.0, -0.7, 2.9, 24, Color("#bfe8ff"), 3.0)
-		draw_string(ThemeDB.fallback_font, Vector2(458, 450), "隐藏的 Kent 视觉传感器已显现。", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color("#bfe8ff"))
+	# 《窗》 seen from behind: Graham came through it from the gallery.
+	var w := S06_WINDOW_CENTER
+	draw_rect(Rect2(w - Vector2(58, 58), Vector2(116, 116)), Color("#d2b46e"), true)
+	draw_rect(Rect2(w - Vector2(48, 48), Vector2(96, 96)), Color("#172c3c"), true)
+	draw_circle(w, 40.0, Color(0.25, 0.72, 0.95, 0.22))
+	draw_string(ThemeDB.fallback_font, w + Vector2(-20, 82), "《窗》", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color("#e8dfc8"))
+	# 《盲》: a figure without eyes.
+	draw_rect(Rect2(160, 326, 40, 46), Color("#4b5966"), true)
+	draw_circle(Vector2(180, 300), 16.0, Color("#79868b"))
+	draw_rect(Rect2(170, 314, 20, 12), Color("#79868b"), true)
+	draw_string(ThemeDB.fallback_font, Vector2(165, 392), "《盲》", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#e8dfc8"))
+	# 《凝视》: the mechanical eye; its pupil shows where it is looking.
+	var eye := S06_GAZE_EYE
+	var gaze_target := _s06_gaze_target()
+	var look := (gaze_target - eye).normalized()
+	draw_rect(Rect2(eye.x - 20.0, 326, 40, 46), Color("#4b5966"), true)
+	draw_circle(eye, 24.0, Color("#64747b"))
+	draw_circle(eye + look * 9.0, 11.0, Color("#172431"))
+	draw_string(ThemeDB.fallback_font, Vector2(eye.x - 21.0, 392), "《凝视》", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#e8dfc8"))
+	# 《看见》: an empty plinth; the plaque reads "看见即存在".
+	var c := S06_PLATFORM_CENTER
+	draw_rect(Rect2(c.x - 66.0, 310, 132, 8), Color("#566674"), true)
+	draw_rect(Rect2(c.x - 60.0, 318, 120, 54), Color("#3a4654"), true)
+	draw_string(ThemeDB.fallback_font, Vector2(c.x - 35.0, 350), "看见即存在", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#d6c79f"))
+	draw_string(ThemeDB.fallback_font, Vector2(c.x - 21.0, 392), "《看见》", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#e8dfc8"))
+	if blue_lake_active and not s06_sensor_revealed:
+		# Blue Lake can see 《凝视》's line of sight; it turns warm when it lands on the platform.
+		var on_platform := s06_gaze_index == 3
+		var beam := Color(0.96, 0.85, 0.55, 0.65) if on_platform else Color(0.75, 0.91, 1.0, 0.35)
+		draw_line(eye + look * 24.0, gaze_target, beam, 3.0)
+		var eye_glow := 0.8 if chalk_hover_target == "Gaze" else 0.4
+		draw_arc(eye, 34.0, 0.0, TAU, 28, Color(0.75, 0.91, 1.0, eye_glow), 2.0)
+		if not s06_contour_seen:
+			var glow := 0.8 if chalk_hover_target == "Sensor" else 0.4
+			draw_circle(c, 48.0, Color(0.35, 0.82, 0.96, 0.10))
+			draw_arc(c, 48.0, 0.0, TAU, 32, Color(0.75, 0.91, 1.0, glow), 2.0)
+	if not s06_sensor_revealed:
+		if s06_contour_seen:
+			# Blue Lake's layer: outline only.
+			draw_arc(c, 22.0, 0.0, TAU, 32, Color("#bfe8ff"), 2.0)
+			draw_arc(c, 10.0, 0.0, TAU, 24, Color("#bfe8ff"), 1.5)
+		if s06_gaze_index == 3:
+			# 《凝视》's layer: colour only.
+			draw_circle(c, 20.0, Color(0.95, 0.72, 0.45, 0.30))
+		var note := "普通视角：展台是空的。"
+		if s06_contour_seen and s06_gaze_index != 3:
+			note = "只有轮廓。还差一层。"
+		elif s06_gaze_index == 3 and not s06_contour_seen:
+			note = "《凝视》只看见一团颜色。"
+		elif blue_lake_active:
+			note = "蓝湖视角：空白处好像有东西。"
+		draw_string(ThemeDB.fallback_font, Vector2(c.x - 90.0, 214), note, HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color("#bfe8ff") if blue_lake_active or s06_contour_seen else Color("#aab8c2"))
+	else:
+		draw_circle(c, 22.0, Color("#6ec9e8"))
+		draw_circle(c, 10.0, Color("#dff8ff"))
+		draw_arc(c, 32.0, -0.7, 2.9, 24, Color("#bfe8ff"), 3.0)
+		draw_rect(Rect2(c.x - 14.0, c.y + 22.0, 28, 6), Color("#8796a2"), true)
+		if not s06_stolen:
+			draw_string(ThemeDB.fallback_font, Vector2(c.x - 40.0, 214), "看见即存在。", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color("#bfe8ff"))
 	if s06_chase_active:
-		draw_circle(Vector2(s06_guard_chase_x, 410), 20.0, Color("#bba88c"))
-		draw_rect(Rect2(s06_guard_chase_x - 20.0, 432, 40, 68), Color("#566b7a"), true)
-		draw_string(ThemeDB.fallback_font, Vector2(s06_guard_chase_x - 42.0, 505), "保安追来", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#f0c6a5"))
+		draw_circle(Vector2(s06_guard_chase_x, 392), 16.0, Color("#bba88c"))
+		draw_rect(Rect2(s06_guard_chase_x - 17.0, 408, 34, 56), Color("#566b7a"), true)
+		draw_string(ThemeDB.fallback_font, Vector2(s06_guard_chase_x - 28.0, 368), "保安追来", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color("#f0c6a5"))
+
+## Where 《凝视》 is looking right now.
+func _s06_gaze_target() -> Vector2:
+	match s06_gaze_index:
+		0:
+			return S06_GAZE_EYE + Vector2(30, -110)
+		1:
+			return Vector2(196, 300)
+		2:
+			return S06_GAZE_EYE + Vector2(60, 150)
+		_:
+			return S06_PLATFORM_CENTER
 
 func _draw_s07_gallery() -> void:
 	# S07 walks back through the real rooms; each keeps a second layer only Blue Lake can read.
@@ -795,7 +871,7 @@ func _finish_blue_lake_transformation() -> void:
 	elif s05_active:
 		_show_dialogue("Blue Lake：现在，把粉笔移到《窗》上，点左键。")
 	elif s06_active:
-		_show_dialogue("Blue Lake：现在，看中央展台的空白处。")
+		_show_dialogue("Blue Lake：现在，" + _s06_chalk_hint())
 	elif s07_active:
 		_show_dialogue("Blue Lake：同一个地方，第二次看会不一样。" + _s07_chalk_hint())
 	elif s08_active:
@@ -978,11 +1054,11 @@ func _try_s02_interact() -> void:
 		chapter_state.mark_event(&"s02_dead_end_observed")
 		_show_dialogue("右边的通路明明能走到尽头。\n尽头的墙上挂着一面镜子。")
 	else:
-		_describe_hall_exhibit(object_name)
+		_describe_exhibit(object_name)
 	_try_complete_s02()
 
-## Paintings and sculptures of the S02/S03 hall read the same in both Slices.
-func _describe_hall_exhibit(object_name: String) -> void:
+## Paintings and sculptures read the same wherever they are (re)visited.
+func _describe_exhibit(object_name: String) -> void:
 	if object_name == "MirrorInMirror":
 		_show_dialogue("《镜中镜》：画里挂着一面镜子。\n镜子里映出的房间，比画外的房间多一扇门。")
 	elif object_name == "PearlHeadphones":
@@ -992,13 +1068,13 @@ func _describe_hall_exhibit(object_name: String) -> void:
 	elif object_name == "SculptureGaze":
 		_show_dialogue("《凝视》：巨大的机械眼球追随着展厅里的动静。")
 	elif object_name == "SculptureVenus":
-		_show_dialogue("《机械维纳斯》：她缺少一只手臂和一只眼睛。")
+		_show_dialogue("《机械维纳斯》：她缺少一只手臂和一只眼睛。\n格雷汉：……有点像阿姨。")
 	elif object_name == "SculptureTwins":
 		_show_dialogue("《双生》：两个头颅背对着彼此。说明牌写着共同创作者。")
 	elif object_name == "SculptureLight":
 		_show_dialogue("《光》：棱镜把一道白光拆成不同颜色。")
 	elif object_name == "SculptureBlind":
-		_show_dialogue("《盲》：没有眼睛的人像，安静地面对展厅。")
+		_show_dialogue("《盲》：没有眼睛的人像，安静地面对展厅。\n格雷汉：阿姨缺的，也是看东西的那一部分。")
 
 func _try_s03_interact() -> void:
 	if not s03_active or scene_state != "gallery" or transition_started:
@@ -1010,7 +1086,7 @@ func _try_s03_interact() -> void:
 	if object_name == "SecurityGuard":
 		_show_dialogue("保安指向最右边：一直往右走，就能找到出口。")
 	elif object_name != "Mirror":
-		_describe_hall_exhibit(object_name)
+		_describe_exhibit(object_name)
 	elif not s03_mirror_observed:
 		s03_mirror_observed = true
 		chapter_state.mark_event(&"s03_mirror_observed")
@@ -1068,7 +1144,7 @@ func _try_s04_interact() -> void:
 	elif object_name == "Restorer":
 		if not s04_visitor_observed:
 			# The visitor is met first; until then the restorer stays bent over her work.
-			_show_dialogue("修复师正专心修复一幅画，没有抬头。")
+			_show_dialogue("修复师盯着《星空下的神经》，没有抬头。")
 		elif not s04_restorer_observed:
 			s04_restorer_observed = true
 			chapter_state.mark_event(&"s04_restorer_observed")
@@ -1117,6 +1193,8 @@ func _try_s04_interact() -> void:
 			_show_dialogue("参观者：这幅画里有光。你可以看看它。\nBlue Lake：原来认出一个人，不一定要看见他的脸。")
 			objective_label.text = "调查《窗》"
 			_enter_s05_after_s04()
+	elif object_name in ["StarryNerves", "PearlHeadphones", "SculptureTwins"]:
+		_describe_exhibit(object_name)
 	queue_redraw()
 
 func _try_s04_chalk_interaction() -> void:
@@ -1224,25 +1302,42 @@ func _try_s06_interact() -> void:
 	if nearest.is_empty():
 		return
 	var object_name: String = nearest.get("name", "")
-	if object_name == "EscapeWindow" and s06_chase_active:
-		s06_stolen = true
-		chapter_state.mark_event(&"s06_sensor_taken")
-		_show_dialogue("格雷汉：从窗户出去！\nBlue Lake：快，幕布要落下了。")
-		_start_transition()
-		return
-	if not s06_platform_observed:
+	if object_name == "EscapeWindow":
+		if s06_chase_active:
+			s06_stolen = true
+			chapter_state.mark_event(&"s06_sensor_taken")
+			_show_dialogue("格雷汉：从窗户出去！\nBlue Lake：快，幕布要落下了。")
+			_start_transition()
+			return
+		_show_dialogue("《窗》的背面。我们就是从这里进来的。")
+	elif object_name == "Gaze":
+		_show_dialogue("《凝视》：巨大的机械眼球追随着展厅里的动静。\n它现在看着" + S06_GAZE_PLACES[s06_gaze_index] + "。")
+	elif object_name == "Blind":
+		_describe_exhibit("SculptureBlind")
+	elif not s06_platform_observed:
 		s06_platform_observed = true
 		chapter_state.mark_event(&"s06_platform_observed")
-		_show_dialogue("《看见》：空展台下写着“看见即存在”。")
+		_show_dialogue("《看见》：空展台。说明牌上写着“看见即存在”。\nBlue Lake：可这里什么都没有……按 Space，让我来看。")
 		_show_space_prompt()
 	elif s06_sensor_revealed:
-		_show_dialogue("展台上的物件很像肯特阿姨缺失的光学零件。\n她们正缺少它……要拿走原件吗？")
+		if s06_choice_visible or s06_stolen:
+			return
+		_show_dialogue("格雷汉：这种型号早就停产了，我找了好几年。阿姨正缺这个。\n错过这次，可能再也找不到了……可它是展品。")
 		s06_choice_visible = true
 		s06_take_button.show()
 		s06_leave_button.show()
+	elif not s06_contour_seen:
+		_show_dialogue("Blue Lake：按 Space，用我的眼睛看展台。")
+		_show_space_prompt()
 	else:
-		_show_dialogue("展台仍然是空的。先用蓝湖观察它。")
+		_show_dialogue("Blue Lake：我只看见轮廓。这间展厅里还有别的眼睛——《凝视》在看哪里？")
 	queue_redraw()
+
+## What Blue Lake says once the Chalk is out in S06, depending on which layer is still missing.
+func _s06_chalk_hint() -> String:
+	if not s06_contour_seen:
+		return "把粉笔移到展台上，点左键。"
+	return "只有轮廓还不够。把粉笔移到《凝视》的眼睛上，点左键，让它转过来。"
 
 func _try_toggle_s06_blue_lake() -> void:
 	if not s06_platform_observed:
@@ -1257,20 +1352,44 @@ func _try_toggle_s06_blue_lake() -> void:
 	blue_lake_active = not blue_lake_active
 	chalk_cursor.set_active(blue_lake_active)
 	visual_mode = "Chalk Interaction" if blue_lake_active else "Standard"
-	_show_dialogue("Blue Lake：" + ("空白处有东西。用粉笔碰它。" if blue_lake_active else "……先收起来。"))
+	_show_dialogue("Blue Lake：" + (_s06_chalk_hint() if blue_lake_active else "……先收起来。"))
 	_update_ui()
 	queue_redraw()
 
 func _try_s06_chalk_interaction() -> void:
-	if chalk_hover_target != "Sensor" or s06_sensor_revealed:
+	if s06_sensor_revealed:
 		return
+	if chalk_hover_target == "Sensor":
+		if not s06_contour_seen:
+			s06_contour_seen = true
+			chapter_state.mark_event(&"s06_contour_seen")
+		if s06_gaze_index == 3:
+			_reveal_s06_sensor()
+			return
+		_show_dialogue("Blue Lake：只有一圈轮廓……一种看法还不够，还差一层。\n《凝视》也在看这间展厅。把粉笔移到它的眼睛上。")
+	elif chalk_hover_target == "Gaze":
+		# Each touch of the Chalk turns the mechanical eye one step.
+		s06_gaze_index = (s06_gaze_index + 1) % S06_GAZE_PLACES.size()
+		if s06_gaze_index == 3 and s06_contour_seen:
+			_reveal_s06_sensor()
+			return
+		if s06_gaze_index == 3:
+			_show_dialogue("《凝视》转向了展台。\nBlue Lake：它只看见一团颜色……用我也看看展台。")
+		else:
+			_show_dialogue("《凝视》转向了" + S06_GAZE_PLACES[s06_gaze_index] + "。")
+	queue_redraw()
+
+func _reveal_s06_sensor() -> void:
+	# The mechanical eye and Blue Lake look at the same empty place: outline + colour = the part.
 	s06_sensor_revealed = true
+	_hide_space_prompt()
 	blue_lake_active = false
 	chalk_cursor.set_active(false)
 	visual_mode = "Sensor Layer"
 	chapter_state.mark_event(&"s06_visual_sensor_revealed")
 	chapter_state.mark_event(&"s06_kent_optical_part_revealed")
-	_show_dialogue("Blue Lake：这里刚才明明什么都没有。\n格雷汉：这很像肯特阿姨的光学零件。她们正缺少它。")
+	_show_dialogue("Blue Lake：两双眼睛看着同一个地方……这里刚才明明什么都没有。\n格雷汉：等等。这个型号，和阿姨坏掉的那只一模一样。")
+	objective_label.text = "再看看展台上的东西"
 	_update_ui()
 	queue_redraw()
 
@@ -1298,7 +1417,7 @@ func _choose_leave_sensor() -> void:
 	chapter_state.learn(&"s06_invisible_does_not_mean_nonexistent")
 	chapter_state.set_player_goal(&"return_and_reobserve")
 	chapter_state.complete_slice(ChapterState.Slice.S06_PLATFORM)
-	_show_dialogue("格雷汉：先让它留在这里。\nBlue Lake：同一个地方，可以再看一次。")
+	_show_dialogue("格雷汉：……先让它留在这里。\nBlue Lake：同一个地方，可以再看一次。")
 	await get_tree().create_timer(0.8).timeout
 	_enter_s07_after_s06()
 
@@ -1309,10 +1428,13 @@ func _enter_s06_after_s05() -> void:
 	s06_active = true
 	s06_platform_observed = false
 	s06_sensor_revealed = false
+	s06_contour_seen = false
+	s06_gaze_index = 0
 	blue_lake_active = false
 	blue_lake_transform_completed = false
 	chalk_cursor.set_active(false)
-	player.position = Vector2(576, 430)
+	# Graham steps through the opened 《窗》 and arrives in front of its back side.
+	player.position.x = S06_WINDOW_CENTER.x
 	chapter_state.advance_to(ChapterState.Slice.S06_PLATFORM)
 	chapter_state.set_map_state(&"Museum_S06_CentralPlatform")
 	chapter_state.set_player_goal(&"observe_the_platform")
@@ -1352,7 +1474,7 @@ func _try_s07_interact() -> void:
 		else:
 			_show_dialogue("Blue Lake：这一次，你已经知道该看哪里了。")
 	else:
-		_describe_hall_exhibit(object_name)
+		_describe_exhibit(object_name)
 	queue_redraw()
 
 ## What Blue Lake says once the Chalk is out in S07, depending on the room and progress.
@@ -1525,7 +1647,7 @@ func _enter_s04_after_s03() -> void:
 	s04_visitor_recognized = false
 	s04_visitor_moved = false
 	# Through the chalk door Graham steps in at the right wall, walking left.
-	player.position.x = 960.0
+	player.position.x = 975.0
 	chapter_state.advance_to(ChapterState.Slice.S04_VISITOR)
 	chapter_state.set_map_state(&"Museum_S04_Visitor")
 	chapter_state.set_player_goal(&"recognize_the_visitor")
@@ -1896,8 +2018,11 @@ func _update_chalk_hover() -> void:
 		if not s05_window_open and mouse_position.distance_to(S05_WINDOW_CENTER) <= 62.0:
 			chalk_hover_target = "Window"
 	elif S06_ENABLED and s06_active:
-		if not s06_sensor_revealed and mouse_position.distance_to(Vector2(576, 292)) <= 62.0:
-			chalk_hover_target = "Sensor"
+		if not s06_sensor_revealed:
+			if mouse_position.distance_to(S06_PLATFORM_CENTER) <= 50.0:
+				chalk_hover_target = "Sensor"
+			elif mouse_position.distance_to(S06_GAZE_EYE) <= 36.0:
+				chalk_hover_target = "Gaze"
 	elif S07_ENABLED and s07_active:
 		if s07_room == "hall" and not s07_mirror_trace_found and mouse_position.distance_to(S03_MIRROR_CENTER) <= 55.0:
 			chalk_hover_target = "ReturnMirror"

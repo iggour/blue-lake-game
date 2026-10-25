@@ -30,10 +30,10 @@ func _run() -> void:
 	_check(absf(main.player.position.x - 120.0) < 1.0, "S02 starts at the hall entrance on the left")
 	await _shot("s02_1_enter")
 
-	for item_name in ["PearlHeadphones", "StarryNerves", "MirrorInMirror"]:
+	for item_name in ["MirrorInMirror"]:
 		await _walk_to_x(_item(item_name).position.x)
 		await _press_e_expecting(item_name)
-	for item_name in ["SculptureGaze", "SculptureVenus", "SculptureTwins", "SculptureLight", "SculptureBlind"]:
+	for item_name in ["SculptureLight", "SculptureVenus"]:
 		await _walk_to_x(_item(item_name).position.x)
 		await _press_e_expecting(item_name)
 	await _shot("s02_2_sculptures")

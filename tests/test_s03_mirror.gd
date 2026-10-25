@@ -35,7 +35,7 @@ func _run() -> void:
 	_check(main.player.position.x > 50.0, "left wall blocks before the mirror (x=%d)" % main.player.position.x)
 	_check(main.s03_active, "still in S03")
 
-	await _walk_to_x(455.0)
+	await _walk_to_x(260.0)
 	await _press_e_expecting("MirrorInMirror")
 	_check(main.dialogue_label.text.contains("镜中镜"), "hall exhibits still answer E in S03")
 	await _walk_to_x(545.0)

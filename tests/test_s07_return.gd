@@ -25,12 +25,13 @@ func _run() -> void:
 	main.chapter_state.complete_slice(ChapterState.Slice.S05_WINDOW)
 	main._enter_s06_after_s05()
 	await _frames(2)
+	_check(absf(main.player.position.x - main.S06_WINDOW_CENTER.x) < 1.0, "Graham arrives in front of 《窗》")
+	await _walk_to_x(main.S06_PLATFORM_CENTER.x)
 	await _press_e_expecting("CentralPlatform")
 	await _press("blue_lake")
 	await main.blue_lake_transform.finished
 	await _frames(2)
-	main.chalk_hover_target = "Sensor"
-	main._try_s06_chalk_interaction()
+	await _solve_s06_gaze()
 	await _press_e_expecting("CentralPlatform")
 	_check(main.s06_leave_button.visible, "choice is shown")
 	if windowed:
@@ -171,3 +172,27 @@ func _shot(shot_name: String) -> void:
 	await process_frame
 	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(SHOT_DIR))
 	root.get_texture().get_image().save_png(SHOT_DIR + "/" + shot_name + ".png")
+
+func _solve_s06_gaze() -> void:
+	# Blue Lake alone sees only the outline; turning 《凝视》 onto the platform adds the colour.
+	await _chalk_on("Sensor", main.S06_PLATFORM_CENTER)
+	_check(main.s06_contour_seen, "Chalk on the platform shows the outline")
+	_check(not main.s06_sensor_revealed, "the outline alone does not reveal the part")
+	_check(main.blue_lake_active, "Blue Lake stays on after the outline")
+	for i in range(4):
+		if main.s06_sensor_revealed:
+			break
+		await _chalk_on("Gaze", main.S06_GAZE_EYE)
+	_check(main.s06_sensor_revealed, "turning 《凝视》 onto the platform reveals the part")
+	_check(main.s06_gaze_index == 3, "《凝视》 ends up looking at the platform")
+	_check(main.dialogue_label.text.contains("一模一样"), "Graham recognizes the model")
+
+func _chalk_on(target: String, point: Vector2) -> void:
+	if DisplayServer.get_name() == "headless":
+		main.chalk_hover_target = target
+		main._try_s06_chalk_interaction()
+		await _frames(1)
+	else:
+		await _move_mouse(point)
+		_check(main.chalk_hover_target == target, "Chalk hovers %s" % target)
+		await _click()
