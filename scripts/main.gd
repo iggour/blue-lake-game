@@ -5,6 +5,8 @@ const CursorScript := preload("res://scripts/chalk_cursor.gd")
 const TransitionScript := preload("res://scripts/transition_overlay.gd")
 const BlueLakeTransformScript := preload("res://scripts/blue_lake_transform.gd")
 const ChapterStateScript := preload("res://scripts/chapter_state.gd")
+# Glass centre of the dead-end mirror at the far right of the S02/S03 hall.
+const S03_MIRROR_CENTER := Vector2(983, 286)
 
 # Prototype 0.2 is retained as a reference implementation, not as the default
 # Chapter 1 route. Slice-specific content will be reattached deliberately.
@@ -33,7 +35,6 @@ var s03_active := false
 var s03_mirror_observed := false
 var s03_mirror_intervened := false
 var s03_mirror_crossed := false
-var s03_return_guard_spoken := false
 var s03_interactables: Array[Dictionary] = []
 var s04_active := false
 var s04_visitor_observed := false
@@ -265,10 +266,13 @@ func _build_gallery() -> void:
 		{"name":"SculptureBlind", "position":Vector2(890,440), "radius":27.0, "hint_y":398.0},
 		{"name":"DeadEnd", "position":Vector2(983,440), "radius":38.0, "hint_y":398.0}
 	]
-	s03_interactables = [
-		{"name":"Mirror", "position":Vector2(1010,520), "radius":96.0},
-		{"name":"SecurityGuard", "position":Vector2(700,520), "radius":72.0}
-	]
+	# S03 happens in the same hall as S02; the dead-end mirror is now the puzzle.
+	s03_interactables = []
+	for item in s02_interactables:
+		var s03_item: Dictionary = item.duplicate()
+		if s03_item.name == "DeadEnd":
+			s03_item.name = "Mirror"
+		s03_interactables.append(s03_item)
 	s04_interactables = [
 		{"name":"Visitor", "position":Vector2(850,520), "radius":72.0},
 		{"name":"Restorer", "position":Vector2(620,520), "radius":120.0},
@@ -313,7 +317,7 @@ func _draw_gallery(room: Node2D) -> void:
 	if LEGACY_PROTOTYPE_FLOW_ENABLED:
 		draw_string(ThemeDB.fallback_font, Vector2(108, 175), "镜子展厅", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color("#98aabd"))
 		draw_string(ThemeDB.fallback_font, Vector2(610, 175), "画作展厅", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color("#98aabd"))
-	if blue_lake_active:
+	if LEGACY_PROTOTYPE_FLOW_ENABLED and blue_lake_active:
 		if not mirror_solved and chalk_hover_target == "Mirror":
 			draw_circle(Vector2(205, 230), 62.0, Color(0.55, 0.88, 1.0, 0.13))
 			draw_arc(Vector2(205, 230), 62.0, 0.0, TAU, 32, Color("#bfe8ff"), 2.0)
@@ -325,11 +329,6 @@ func _draw_gallery(room: Node2D) -> void:
 			draw_arc(Vector2(840, 205), 68.0, 0.0, TAU, 32, Color("#bfe8ff"), 2.0)
 		if mirror_solved and handle_found and not window_open:
 			draw_string(ThemeDB.fallback_font, Vector2(748, 330), "这里可以打开", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color("#f6e5a7"))
-	# The old left exit is a second real gate, opened after the guard is revisited.
-	if is_instance_valid(west_exit_body) and west_exit_body.collision_layer > 0:
-		draw_rect(Rect2(20, 112, 24, 408), Color("#202c3a"), true)
-		draw_rect(Rect2(8, 356, 48, 164), Color("#445866"), true)
-		draw_rect(Rect2(14, 366, 36, 154), Color("#1c2934"), true)
 	# Subtle blue traces lead from the starting side toward the first-intervention area.
 	if LEGACY_PROTOTYPE_FLOW_ENABLED:
 		var guide_alpha := 0.10 + (sin(Time.get_ticks_msec() * 0.003) + 1.0) * 0.035
@@ -443,26 +442,23 @@ func _draw_s02_gallery() -> void:
 	draw_string(ThemeDB.fallback_font, Vector2(947, 392), "尽头的镜子", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#e8dfc8"))
 
 func _draw_s03_gallery() -> void:
-	draw_string(ThemeDB.fallback_font, Vector2(116, 175), "镜子展厅尽头", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color("#b8c7d4"))
-	draw_circle(Vector2(700, 410), 20.0, Color("#bba88c"))
-	draw_rect(Rect2(680, 432, 40, 68), Color("#566b7a"), true)
-	draw_line(Vector2(720, 450), Vector2(760, 430), Color("#bba88c"), 5.0)
-	draw_string(ThemeDB.fallback_font, Vector2(674, 505), "保安 →", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#e8dfc8"))
-	draw_rect(Rect2(964, 312, 92, 208), Color("#c2a875"), true)
-	draw_rect(Rect2(974, 322, 72, 188), Color("#426b82"), true)
-	draw_rect(Rect2(987, 376, 44, 35), Color("#c9ae78"), true)
-	draw_rect(Rect2(992, 381, 34, 25), Color("#667989"), true)
-	draw_line(Vector2(990, 402), Vector2(1027, 382), Color("#d5c38e"), 2.0)
-	draw_string(ThemeDB.fallback_font, Vector2(962, 540), "镜中倒映着入口", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#e8dfc8"))
-	if s03_mirror_observed and blue_lake_active:
-		draw_circle(Vector2(1010, 410), 65.0, Color(0.55, 0.88, 1.0, 0.11))
-		draw_arc(Vector2(1010, 410), 65.0, 0.0, TAU, 32, Color("#bfe8ff"), 2.0)
-		draw_string(ThemeDB.fallback_font, Vector2(865, 230), "镜中有门，现实中没有。", HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color("#bfe8ff"))
+	# Same hall as S02. The mirror reflects it reversed: its far (left) wall has a door reality lacks.
+	_draw_s02_gallery()
+	draw_rect(Rect2(989, 300, 12, 34), Color(0.75, 0.9, 1.0, 0.35), false, 2.0)
+	if blue_lake_active and not s03_mirror_intervened:
+		var glow := 0.75 if chalk_hover_target == "Mirror" else 0.4
+		draw_circle(S03_MIRROR_CENTER, 55.0, Color(0.55, 0.88, 1.0, 0.11))
+		draw_arc(S03_MIRROR_CENTER, 55.0, 0.0, TAU, 32, Color(0.75, 0.91, 1.0, glow), 2.0)
+		draw_rect(Rect2(987, 298, 16, 38), Color("#bfe8ff"), false, 3.0)
+		draw_string(ThemeDB.fallback_font, Vector2(770, 196), "镜中有门，现实中没有。", HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color("#bfe8ff"))
 	if s03_mirror_intervened:
-		draw_rect(Rect2(968, 270, 84, 198), Color(0.45, 0.86, 1.0, 0.26), false, 3.0)
-		draw_string(ThemeDB.fallback_font, Vector2(850, 260), "镜中的门已经显现", HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color("#bfe8ff"))
-	if s03_mirror_crossed:
-		draw_string(ThemeDB.fallback_font, Vector2(116, 370), "你从镜子里回到了入口一侧。", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color("#d6e8f0"))
+		# The chalk copies the mirrored door onto the real left wall.
+		var pulse := 0.5 + (sin(Time.get_ticks_msec() * 0.004) + 1.0) * 0.2
+		draw_rect(Rect2(62, 262, 22, 110), Color(0.75, 0.92, 1.0, 0.18), true)
+		draw_rect(Rect2(62, 262, 22, 110), Color(0.75, 0.92, 1.0, pulse), false, 3.0)
+		draw_line(Vector2(240, 470), Vector2(160, 470), Color(0.85, 0.95, 1.0, 0.6), 3.0)
+		draw_line(Vector2(160, 470), Vector2(176, 460), Color(0.85, 0.95, 1.0, 0.6), 3.0)
+		draw_line(Vector2(160, 470), Vector2(176, 480), Color(0.85, 0.95, 1.0, 0.6), 3.0)
 
 func _draw_s04_gallery() -> void:
 	draw_string(ThemeDB.fallback_font, Vector2(116, 175), "画作展厅与修复区", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color("#b8c7d4"))
@@ -744,7 +740,7 @@ func _finish_blue_lake_transformation() -> void:
 	chalk_cursor.set_active(true)
 	player.input_locked = false
 	if s03_active:
-		_show_dialogue("Blue Lake：现在，用我去看镜子。")
+		_show_dialogue("Blue Lake：现在，把粉笔移到镜子上，点左键。")
 	elif s04_active:
 		_show_dialogue("Blue Lake：用荧光照一下那盏灯。")
 	elif s05_active:
@@ -772,7 +768,7 @@ func _try_toggle_s03_blue_lake() -> void:
 	blue_lake_active = not blue_lake_active
 	chalk_cursor.set_active(blue_lake_active)
 	visual_mode = "Chalk Interaction" if blue_lake_active else "Standard"
-	_show_dialogue("Blue Lake：" + ("用粉笔描出镜中的门。" if blue_lake_active else "……先收起来。"))
+	_show_dialogue("Blue Lake：" + ("把粉笔移到镜子上，点左键，描出镜中的门。" if blue_lake_active else "……先收起来。"))
 	_update_ui()
 	queue_redraw()
 
@@ -907,22 +903,21 @@ func _try_s02_interact() -> void:
 	var object_name: String = nearest.get("name", "")
 	if object_name == "SecurityGuard":
 		chapter_state.mark_event(&"s02_guard_observed")
-		if s03_mirror_crossed and not s03_return_guard_spoken:
-			s03_return_guard_spoken = true
-			_show_dialogue("保安又指向最右侧。\n格雷汉：你刚才也是这么说的。我们明明从右下绕回来了。")
-			if is_instance_valid(west_exit_body):
-				west_exit_body.collision_layer = 0
-				west_exit_body.collision_mask = 0
+		chapter_state.mark_event(&"s02_guard_directed_right")
+		if s02_loop_count > 0:
+			_show_dialogue("保安再次指向最右侧。\n格雷汉：你刚才也是这么说的。我们已经回来过一次了。")
 		else:
-			chapter_state.mark_event(&"s02_guard_directed_right")
-			if s02_loop_count > 0:
-				_show_dialogue("保安再次指向最右侧。\n格雷汉：你刚才也是这么说的。我们已经回来过一次了。")
-			else:
-				_show_dialogue("保安指向最右侧。\n保安：一直往最右边走，就能找到出口。")
+			_show_dialogue("保安指向最右侧。\n保安：一直往最右边走，就能找到出口。")
 	elif object_name == "DeadEnd":
 		chapter_state.mark_event(&"s02_dead_end_observed")
 		_show_dialogue("右边的通路明明能走到尽头。\n尽头的墙上挂着一面镜子。")
-	elif object_name == "MirrorInMirror":
+	else:
+		_describe_hall_exhibit(object_name)
+	_try_complete_s02()
+
+## Paintings and sculptures of the S02/S03 hall read the same in both Slices.
+func _describe_hall_exhibit(object_name: String) -> void:
+	if object_name == "MirrorInMirror":
 		_show_dialogue("《镜中镜》：画里挂着一面镜子。\n镜子里映出的房间，比画外的房间多一扇门。")
 	elif object_name == "PearlHeadphones":
 		_show_dialogue("《戴珍珠耳机的少女》：机器人少女戴着耳机。\n换一个角度，她的脸就变了。")
@@ -938,7 +933,6 @@ func _try_s02_interact() -> void:
 		_show_dialogue("《光》：棱镜把一道白光拆成不同颜色。")
 	elif object_name == "SculptureBlind":
 		_show_dialogue("《盲》：没有眼睛的人像，安静地面对展厅。")
-	_try_complete_s02()
 
 func _try_s03_interact() -> void:
 	if not s03_active or scene_state != "gallery" or transition_started:
@@ -948,33 +942,36 @@ func _try_s03_interact() -> void:
 		return
 	var object_name: String = nearest.get("name", "")
 	if object_name == "SecurityGuard":
-		if s03_mirror_crossed and not s03_return_guard_spoken:
-			s03_return_guard_spoken = true
-			_show_dialogue("保安仍指向最右边。\n格雷汉：你刚才也是这么说的。我们从镜子回来了。")
-			if is_instance_valid(west_exit_body):
-				west_exit_body.collision_layer = 0
-				west_exit_body.collision_mask = 0
-		else:
-			_show_dialogue("保安指向最右边：一直往右走，就能找到出口。")
+		_show_dialogue("保安指向最右边：一直往右走，就能找到出口。")
+	elif object_name != "Mirror":
+		_describe_hall_exhibit(object_name)
 	elif not s03_mirror_observed:
 		s03_mirror_observed = true
 		chapter_state.mark_event(&"s03_mirror_observed")
-		_show_dialogue("镜子里倒映着入口。\nBlue Lake：镜子里有门，现实中没有……")
+		_show_dialogue("镜子里倒映着整个展厅。最左边那面墙上，镜子里多了一扇门。\nBlue Lake：现实里那里没有门……按 Space，让我来看。")
+		_show_space_prompt()
+	elif not s03_mirror_intervened:
+		_show_dialogue("Blue Lake：按 Space，用我的眼睛看镜子。")
 		_show_space_prompt()
 	else:
-		_show_dialogue("Blue Lake：反过来走，也许能找到它。")
+		_show_dialogue("Blue Lake：反过来走。背对镜子，走到最左边的墙。")
 	queue_redraw()
 
 func _try_s03_chalk_interaction() -> void:
 	if chalk_hover_target != "Mirror" or s03_mirror_intervened:
 		return
 	s03_mirror_intervened = true
+	_hide_space_prompt()
 	blue_lake_active = false
 	chalk_cursor.set_active(false)
 	visual_mode = "Mirror Layer"
 	chapter_state.mark_event(&"s03_mirror_structure_revealed")
-	_show_dialogue("Blue Lake：你刚才相信了一个眼睛看不到的东西。\n格雷汉：也许要相信镜子里的，而不是眼睛看到的。")
-	objective_label.text = "走进死路尽头的镜子"
+	# The chalk copies the mirrored door onto the real left wall, which now lets Graham through.
+	if is_instance_valid(west_exit_body):
+		west_exit_body.collision_layer = 0
+		west_exit_body.collision_mask = 0
+	_show_dialogue("格雷汉：也许要相信镜子里的，而不是眼睛看到的。\nBlue Lake：反过来走？")
+	objective_label.text = "背对镜子，走到最左边的墙"
 	_update_ui()
 	queue_redraw()
 
@@ -1438,7 +1435,7 @@ func _enter_s04_after_s03() -> void:
 	chapter_state.set_player_goal(&"recognize_the_visitor")
 	chapter_state.mark_story_event(&"s04_started")
 	objective_label.text = "观察参观者"
-	_show_dialogue("格雷汉：我们回到最左边了。前面那扇门现在通了。")
+	_show_dialogue("Blue Lake：你刚才相信了一个眼睛看不到的东西。")
 	_update_ui()
 	queue_redraw()
 
@@ -1483,18 +1480,12 @@ func _update_route_transitions() -> void:
 	if s01_active and s01_completion_started and player.position.x >= 1012.0:
 		_enter_s02_after_s01()
 		return
-	if s03_active and s03_mirror_intervened and not s03_mirror_crossed and player.position.x >= 1000.0:
+	# PDF puzzle 1: turn your back on the mirror and walk through the wall that has no door.
+	if s03_active and s03_mirror_intervened and not s03_mirror_crossed and player.position.x <= 50.0:
 		s03_mirror_crossed = true
 		chapter_state.mark_event(&"s03_mirror_crossed")
 		chapter_state.learn(&"s03_visual_is_not_reality")
-		chapter_state.set_player_goal(&"return_to_the_entrance")
 		chapter_state.complete_slice(ChapterState.Slice.S03_MIRROR)
-		player.position = Vector2(548, 520)
-		_show_dialogue("Blue Lake：反过来走？\n你穿过镜面，回到了入口一侧。")
-		_update_ui()
-		queue_redraw()
-		return
-	if s03_active and s03_mirror_crossed and s03_return_guard_spoken and player.position.x <= 50.0:
 		_enter_s04_after_s03()
 
 func _enter_s03_after_s02() -> void:
@@ -1511,7 +1502,7 @@ func _enter_s03_after_s02() -> void:
 	chapter_state.set_map_state(&"Museum_S03_Mirror")
 	chapter_state.set_player_goal(&"observe_the_mirror")
 	chapter_state.mark_story_event(&"s03_started")
-	player.position = Vector2(190, 430)
+	player.position.x = 120.0
 	objective_label.text = "观察镜子"
 	_show_dialogue("蓝湖：\n我们又回到了这里。\n……看镜子。")
 	_update_ui()
@@ -1807,7 +1798,7 @@ func _update_chalk_hover() -> void:
 		return
 	var mouse_position := get_viewport().get_mouse_position()
 	if S03_ENABLED and s03_active:
-		if not s03_mirror_intervened and mouse_position.distance_to(Vector2(1010, 410)) <= 70.0:
+		if not s03_mirror_intervened and mouse_position.distance_to(S03_MIRROR_CENTER) <= 55.0:
 			chalk_hover_target = "Mirror"
 	elif S04_ENABLED and s04_active:
 		if s04_pigment_applied and not s04_lamp_observed and mouse_position.distance_to(Vector2(501, 322)) <= 52.0:
