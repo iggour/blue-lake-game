@@ -7,6 +7,8 @@ const BlueLakeTransformScript := preload("res://scripts/blue_lake_transform.gd")
 const ChapterStateScript := preload("res://scripts/chapter_state.gd")
 # Glass centre of the dead-end mirror at the far right of the S02/S03 hall.
 const S03_MIRROR_CENTER := Vector2(983, 286)
+# Wall spotlight aimed at 《窗》 in the S04 room; the Chalk marks it.
+const S04_LAMP_CENTER := Vector2(500, 300)
 
 # Prototype 0.2 is retained as a reference implementation, not as the default
 # Chapter 1 route. Slice-specific content will be reattached deliberately.
@@ -274,12 +276,14 @@ func _build_gallery() -> void:
 			s03_item.name = "Mirror"
 		s03_interactables.append(s03_item)
 	s04_interactables = [
-		{"name":"Visitor", "position":Vector2(850,520), "radius":72.0},
-		{"name":"Restorer", "position":Vector2(620,520), "radius":120.0},
-		{"name":"PigmentStation", "position":Vector2(330,520), "radius":68.0},
-		{"name":"Lamp", "position":Vector2(500,520), "radius":68.0},
-		{"name":"LightSwitch", "position":Vector2(430,520), "radius":68.0},
-		{"name":"BlockedWindow", "position":Vector2(980,520), "radius":76.0}
+		# Graham enters from the right (she walked left through the S03 wall), so right to left:
+		# visitor, 《窗》, lamp, switch, restorer, pigment station beside the restorer.
+		{"name":"Visitor", "position":Vector2(740,440), "radius":45.0, "hint_y":258.0},
+		{"name":"BlockedWindow", "position":Vector2(590,440), "radius":45.0, "hint_y":376.0},
+		{"name":"Lamp", "position":Vector2(500,440), "radius":28.0, "hint_y":376.0},
+		{"name":"LightSwitch", "position":Vector2(440,440), "radius":25.0, "hint_y":376.0},
+		{"name":"Restorer", "position":Vector2(340,440), "radius":40.0, "hint_y":258.0},
+		{"name":"PigmentStation", "position":Vector2(250,440), "radius":35.0, "hint_y":398.0}
 	]
 	s05_interactables = [
 		{"name":"Window", "position":Vector2(840,520), "radius":82.0}
@@ -461,50 +465,62 @@ func _draw_s03_gallery() -> void:
 		draw_line(Vector2(160, 470), Vector2(176, 480), Color(0.85, 0.95, 1.0, 0.6), 3.0)
 
 func _draw_s04_gallery() -> void:
-	draw_string(ThemeDB.fallback_font, Vector2(116, 175), "画作展厅与修复区", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color("#b8c7d4"))
-	# Visitor and restorer are separated by the work area and remain busy with their own activities.
-	var visitor_x := 760.0 if s04_visitor_moved else 875.0
-	draw_circle(Vector2(visitor_x, 410), 22.0, Color("#d3b28e"))
-	draw_rect(Rect2(visitor_x - 24.0, 434, 48, 66), Color("#6c8290"), true)
-	draw_circle(Vector2(visitor_x - 8.0, 405), 3.0, Color("#5a6670"))
-	draw_circle(Vector2(visitor_x + 8.0, 405), 3.0, Color("#5a6670"))
-	draw_string(ThemeDB.fallback_font, Vector2(visitor_x - 34.0, 505), "參觀者", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color("#e8dfc8"))
-	draw_circle(Vector2(620, 410), 22.0, Color("#cba98a"))
-	draw_rect(Rect2(595, 434, 50, 66), Color("#b26b5e"), true)
-	draw_rect(Rect2(603, 450, 30, 12), Color("#e3c77d"), true)
-	draw_line(Vector2(651, 454), Vector2(684, 426), Color("#bfe8ff"), 4.0)
-	draw_string(ThemeDB.fallback_font, Vector2(592, 505), "修復師", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color("#e8dfc8"))
-	# The lamp and switch belong to the physical room; the window painting starts in its normal colors.
-	draw_rect(Rect2(292, 430, 76, 46), Color("#665d50"), true)
-	draw_rect(Rect2(300, 422, 60, 12), Color("#c8b98d"), true)
-	draw_circle(Vector2(330, 414), 8.0, Color("#bfe8ff"))
-	draw_string(ThemeDB.fallback_font, Vector2(292, 505), "荧光剂台", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#e8dfc8"))
-	draw_rect(Rect2(465, 265, 72, 10), Color("#d9d1b5"), true)
-	draw_line(Vector2(501, 275), Vector2(501, 315), Color("#b8c7d4"), 3.0)
-	draw_circle(Vector2(501, 322), 12.0, Color("#e5d9ae"))
-	draw_string(ThemeDB.fallback_font, Vector2(458, 350), "感應燈", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#e8dfc8"))
-	draw_rect(Rect2(408, 410, 28, 40), Color("#5e6b73"), true)
-	draw_circle(Vector2(422, 430), 5.0, Color("#d1c49d"))
-	draw_string(ThemeDB.fallback_font, Vector2(390, 475), "燈控", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color("#b8c7d4"))
-	draw_rect(Rect2(947, 356, 122, 164), Color("#c7a56f"), true)
-	draw_rect(Rect2(958, 367, 100, 142), Color("#725e50"), true)
+	# Right to left: arrival wall, visitor, 《窗》, lamp + switch, restorer, pigment station.
+	draw_string(ThemeDB.fallback_font, Vector2(640, 175), "画作展厅", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color("#b8c7d4"))
+	draw_string(ThemeDB.fallback_font, Vector2(200, 175), "修复区", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color("#b8c7d4"))
+	# The chalk door Graham came through, now on this room's right wall.
+	draw_rect(Rect2(998, 262, 22, 110), Color(0.75, 0.92, 1.0, 0.35), false, 2.0)
+	# 《窗》 hangs between the visitor and the restorer.
+	draw_rect(Rect2(540, 225, 100, 120), Color("#c7a56f"), true)
+	draw_rect(Rect2(549, 234, 82, 102), Color("#725e50"), true)
 	if s04_lights_off:
-		draw_rect(Rect2(966, 375, 84, 126), Color("#182633"), true)
-		draw_circle(Vector2(1008, 438), 30.0, Color(0.52, 0.9, 0.98, 0.72))
-		draw_arc(Vector2(1008, 438), 43.0, 0.0, TAU, 32, Color("#bfe8ff"), 3.0)
+		draw_rect(Rect2(555, 240, 70, 90), Color("#182633"), true)
 	else:
-		draw_circle(Vector2(1008, 438), 24.0, Color("#d9b575"))
-		draw_line(Vector2(975, 472), Vector2(1040, 403), Color("#b6a280"), 6.0)
-	if blue_lake_active and chalk_hover_target == "Lamp":
-		draw_circle(Vector2(501, 322), 26.0, Color(0.45, 0.85, 1.0, 0.16))
-		draw_arc(Vector2(501, 322), 26.0, 0.0, TAU, 24, Color("#bfe8ff"), 2.0)
-	draw_string(ThemeDB.fallback_font, Vector2(970, 540), "《窗》", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color("#e8dfc8"))
-	if s04_pigment_applied:
-		draw_arc(Vector2(player.position.x, player.position.y - 28.0), 23.0, 0.0, TAU, 24, Color("#bfe8ff"), 2.0)
+		draw_circle(Vector2(590, 285), 20.0, Color("#d9b575"))
+		draw_line(Vector2(562, 318), Vector2(618, 252), Color("#b6a280"), 6.0)
+	draw_string(ThemeDB.fallback_font, Vector2(570, 362), "《窗》", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color("#e8dfc8"))
+	# The sensor lamp is a wall spotlight aimed at 《窗》; the switch sits beside it.
+	draw_rect(Rect2(490, 316, 20, 6), Color("#8796a2"), true)
+	draw_line(Vector2(500, 316), Vector2(500, 306), Color("#b8c7d4"), 3.0)
+	draw_circle(S04_LAMP_CENTER, 11.0, Color("#e5d9ae"))
+	if not s04_lights_off:
+		draw_colored_polygon(PackedVector2Array([Vector2(506, 294), Vector2(512, 306), Vector2(560, 300), Vector2(552, 250)]), Color(1.0, 0.95, 0.75, 0.12))
+	draw_string(ThemeDB.fallback_font, Vector2(479, 362), "感应灯", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color("#e8dfc8"))
+	draw_rect(Rect2(430, 296, 20, 30), Color("#5e6b73"), true)
+	draw_circle(Vector2(440, 306), 4.0, Color("#d1c49d"))
+	draw_string(ThemeDB.fallback_font, Vector2(427, 362), "灯控", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color("#b8c7d4"))
+	if blue_lake_active and not s04_lamp_observed:
+		var glow := 0.8 if chalk_hover_target == "Lamp" else 0.4
+		draw_circle(S04_LAMP_CENTER, 32.0, Color(0.45, 0.85, 1.0, 0.14))
+		draw_arc(S04_LAMP_CENTER, 32.0, 0.0, TAU, 24, Color(0.75, 0.91, 1.0, glow), 2.0)
+	# Visitor first: she studies 《窗》, then steps aside once she recognizes Graham.
+	var visitor_x := 772.0 if s04_visitor_moved else 708.0
+	draw_circle(Vector2(visitor_x, 322), 16.0, Color("#d3b28e"))
+	draw_rect(Rect2(visitor_x - 18.0, 338, 36, 60), Color("#6c8290"), true)
+	draw_circle(Vector2(visitor_x - 6.0, 319), 2.5, Color("#5a6670"))
+	draw_circle(Vector2(visitor_x + 6.0, 319), 2.5, Color("#5a6670"))
+	draw_string(ThemeDB.fallback_font, Vector2(visitor_x - 20.0, 290), "参观者", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color("#e8dfc8"))
+	# Restorer at her work, with the pigment station right beside her.
+	draw_circle(Vector2(340, 322), 16.0, Color("#cba98a"))
+	draw_rect(Rect2(322, 338, 36, 60), Color("#b26b5e"), true)
+	draw_rect(Rect2(328, 352, 24, 10), Color("#e3c77d"), true)
+	draw_line(Vector2(304, 360), Vector2(286, 340), Color("#bfe8ff"), 4.0)
+	draw_string(ThemeDB.fallback_font, Vector2(320, 290), "修复师", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color("#e8dfc8"))
+	draw_rect(Rect2(222, 340, 56, 32), Color("#665d50"), true)
+	draw_rect(Rect2(226, 332, 48, 10), Color("#c8b98d"), true)
+	draw_circle(Vector2(250, 324), 7.0, Color("#bfe8ff"))
+	draw_string(ThemeDB.fallback_font, Vector2(226, 392), "荧光剂台", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#e8dfc8"))
 	if s04_visitor_observed and not s04_visitor_recognized:
-		draw_string(ThemeDB.fallback_font, Vector2(532, 545), "她仍在尋找你。", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#d6e8f0"))
+		draw_string(ThemeDB.fallback_font, Vector2(visitor_x - 42.0, 236), "她仍在寻找你。", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color("#d6e8f0"))
+	if s04_lights_off:
+		# Lights out: the room goes dark, only the fluorescent traces keep shining.
+		draw_rect(Rect2(84, 140, 936, 368), Color(0.02, 0.04, 0.08, 0.55), true)
+		draw_circle(Vector2(590, 285), 26.0, Color(0.52, 0.9, 0.98, 0.72))
+		draw_arc(Vector2(590, 285), 38.0, 0.0, TAU, 32, Color("#bfe8ff"), 3.0)
+	if s04_pigment_applied:
+		draw_arc(Vector2(player.position.x, player.position.y - 4.0), 23.0, 0.0, TAU, 24, Color("#bfe8ff"), 2.0)
 	if s04_visitor_moved:
-		draw_string(ThemeDB.fallback_font, Vector2(926, 545), "這幅畫裡有光。", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color("#bfe8ff"))
+		draw_string(ThemeDB.fallback_font, Vector2(540, 205), "这幅画里有光。", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color("#bfe8ff"))
 
 func _draw_s05_gallery() -> void:
 	# S05 is the first authored intervention: a painting becomes operable as a window.
@@ -1000,7 +1016,10 @@ func _try_s04_interact() -> void:
 		else:
 			_show_dialogue("参观者：很高兴认识你。\n她又把你当成第一次见面的人。")
 	elif object_name == "Restorer":
-		if not s04_restorer_observed:
+		if not s04_visitor_observed:
+			# The visitor is met first; until then the restorer stays bent over her work.
+			_show_dialogue("修复师正专心修复一幅画，没有抬头。")
+		elif not s04_restorer_observed:
 			s04_restorer_observed = true
 			chapter_state.mark_event(&"s04_restorer_observed")
 			_show_dialogue("修复师：我和那位参观者共同创作了《双生》。\n我负责轮廓，她负责色彩。她有脸盲，记人靠别的线索。")
@@ -1035,7 +1054,7 @@ func _try_s04_interact() -> void:
 			_show_dialogue("灯光熄灭了。画面里有一处仍在发亮。")
 		else:
 			s04_lights_off = false
-			_show_dialogue("灯光重新亮起，画作恢復了普通颜色。")
+			_show_dialogue("灯光重新亮起，画作恢复了普通颜色。")
 	elif object_name == "BlockedWindow":
 		if not s04_visitor_moved:
 			_show_dialogue("参观者还站在《窗》前。")
@@ -1429,7 +1448,8 @@ func _enter_s04_after_s03() -> void:
 	s04_lights_off = false
 	s04_visitor_recognized = false
 	s04_visitor_moved = false
-	player.position = Vector2(80, 520)
+	# Through the chalk door Graham steps in at the right wall, walking left.
+	player.position.x = 960.0
 	chapter_state.advance_to(ChapterState.Slice.S04_VISITOR)
 	chapter_state.set_map_state(&"Museum_S04_Visitor")
 	chapter_state.set_player_goal(&"recognize_the_visitor")
@@ -1801,7 +1821,7 @@ func _update_chalk_hover() -> void:
 		if not s03_mirror_intervened and mouse_position.distance_to(S03_MIRROR_CENTER) <= 55.0:
 			chalk_hover_target = "Mirror"
 	elif S04_ENABLED and s04_active:
-		if s04_pigment_applied and not s04_lamp_observed and mouse_position.distance_to(Vector2(501, 322)) <= 52.0:
+		if s04_pigment_applied and not s04_lamp_observed and mouse_position.distance_to(S04_LAMP_CENTER) <= 40.0:
 			chalk_hover_target = "Lamp"
 	elif S05_ENABLED and s05_active:
 		if not s05_window_open and mouse_position.distance_to(Vector2(840, 462)) <= 68.0:

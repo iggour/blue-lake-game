@@ -29,7 +29,18 @@ func _run() -> void:
 	main._enter_s04_after_s03()
 	await _frames(2)
 	_check(main.s04_active, "S04 is active")
+	_check(main.player.position.x > 900.0, "Graham arrives at the right wall (x=%d)" % main.player.position.x)
 	await _shot("s04_1_enter")
+
+	# Order of the room: the visitor is met before the restorer.
+	var visitor_x: float = _item("Visitor").position.x
+	var restorer_x: float = _item("Restorer").position.x
+	var pigment_x: float = _item("PigmentStation").position.x
+	var window_x: float = _item("BlockedWindow").position.x
+	_check(visitor_x > window_x and window_x > restorer_x, "《窗》 hangs between visitor and restorer")
+	_check(absf(pigment_x - restorer_x) < 120.0, "pigment station sits beside the restorer")
+	await _press_e_at("Restorer")
+	_check(not main.s04_restorer_observed, "restorer stays busy until the visitor is met")
 
 	await _press_e_at("Visitor")
 	_check(main.s04_visitor_observed, "E: visitor observed")
@@ -73,7 +84,7 @@ func _run() -> void:
 		quit(1)
 
 func _lamp_point() -> Vector2:
-	return Vector2(501, 322)
+	return main.S04_LAMP_CENTER
 
 func _item(item_name: String) -> Dictionary:
 	for item in main.s04_interactables:
