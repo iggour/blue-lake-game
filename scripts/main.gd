@@ -253,17 +253,17 @@ func _build_gallery() -> void:
 		{"name":"ExitSign", "position":Vector2(955,440), "radius":50.0, "hint_y":376.0}
 	]
 	s02_interactables = [
-		{"name":"SecurityGuard", "position":Vector2(700,520), "radius":72.0},
-		{"name":"DeadEnd", "position":Vector2(1010,520), "radius":96.0},
-		{"name":"EternalGaze", "position":Vector2(590,520), "radius":62.0},
-		{"name":"NotAnEye", "position":Vector2(640,520), "radius":62.0},
-		{"name":"PearlHeadphones", "position":Vector2(760,520), "radius":62.0},
-		{"name":"StarryNerves", "position":Vector2(820,520), "radius":62.0},
-		{"name":"SculptureGaze", "position":Vector2(880,520), "radius":62.0},
-		{"name":"SculptureVenus", "position":Vector2(920,520), "radius":62.0},
-		{"name":"SculptureTwins", "position":Vector2(960,520), "radius":62.0},
-		{"name":"SculptureLight", "position":Vector2(990,520), "radius":62.0},
-		{"name":"SculptureBlind", "position":Vector2(1040,520), "radius":62.0}
+		# Left to right: paintings, guard, sculptures, then the dead-end mirror. Ranges do not overlap.
+		{"name":"PearlHeadphones", "position":Vector2(210,440), "radius":50.0, "hint_y":376.0},
+		{"name":"StarryNerves", "position":Vector2(340,440), "radius":50.0, "hint_y":376.0},
+		{"name":"MirrorInMirror", "position":Vector2(455,440), "radius":50.0, "hint_y":376.0},
+		{"name":"SecurityGuard", "position":Vector2(545,440), "radius":35.0, "hint_y":258.0},
+		{"name":"SculptureGaze", "position":Vector2(625,440), "radius":30.0, "hint_y":398.0},
+		{"name":"SculptureVenus", "position":Vector2(700,440), "radius":35.0, "hint_y":398.0},
+		{"name":"SculptureTwins", "position":Vector2(775,440), "radius":30.0, "hint_y":398.0},
+		{"name":"SculptureLight", "position":Vector2(835,440), "radius":27.0, "hint_y":398.0},
+		{"name":"SculptureBlind", "position":Vector2(890,440), "radius":27.0, "hint_y":398.0},
+		{"name":"DeadEnd", "position":Vector2(983,440), "radius":38.0, "hint_y":398.0}
 	]
 	s03_interactables = [
 		{"name":"Mirror", "position":Vector2(1010,520), "radius":96.0},
@@ -392,41 +392,55 @@ func _draw_s01_gallery() -> void:
 	draw_string(ThemeDB.fallback_font, Vector2(112, 480), "入口", HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color("#8fa1af"))
 
 func _draw_s02_gallery() -> void:
-	draw_string(ThemeDB.fallback_font, Vector2(116, 175), "画作与雕塑展厅", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color("#b8c7d4"))
-	draw_string(ThemeDB.fallback_font, Vector2(670, 175), "保安指向右侧通道", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color("#b8c7d4"))
-	draw_circle(Vector2(700, 410), 20.0, Color("#bba88c"))
-	draw_rect(Rect2(680, 432, 40, 68), Color("#566b7a"), true)
-	draw_line(Vector2(720, 450), Vector2(760, 430), Color("#bba88c"), 5.0)
-	draw_string(ThemeDB.fallback_font, Vector2(674, 505), "保安 →", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#e8dfc8"))
-	var title_x := [180.0, 330.0, 480.0, 630.0]
-	var artwork_titles := ["《戴珍珠耳机的少女》", "《星空下的神经》", "《镜中镜》", "《凝视》"]
-	for index in range(title_x.size()):
-		var x: float = title_x[index]
-		draw_rect(Rect2(x, 205, 108, 104), Color("#b49464"), true)
-		draw_rect(Rect2(x + 9.0, 214, 90, 86), Color("#66747a"), true)
-		draw_circle(Vector2(x + 54.0, 247), 17.0, Color("#c9bda1"))
-		draw_line(Vector2(x + 22.0, 282), Vector2(x + 86.0, 230), Color("#c8c1a8"), 4.0)
-		draw_string(ThemeDB.fallback_font, Vector2(x - 5.0, 333), artwork_titles[index], HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color("#e8dfc8"))
-	# Sculptures sit along the same public gallery floor; concise labels make the intended clues discoverable.
-	draw_circle(Vector2(790, 260), 35.0, Color("#64747b"))
-	draw_circle(Vector2(790, 260), 18.0, Color("#172431"))
-	draw_string(ThemeDB.fallback_font, Vector2(750, 333), "《機械維納斯》", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color("#e8dfc8"))
-	draw_circle(Vector2(900, 255), 24.0, Color("#b9aa8d"))
-	draw_circle(Vector2(946, 255), 24.0, Color("#b9aa8d"))
-	draw_string(ThemeDB.fallback_font, Vector2(870, 333), "《雙生》", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color("#e8dfc8"))
-	draw_colored_polygon(PackedVector2Array([Vector2(1005, 222), Vector2(1030, 265), Vector2(980, 265)]), Color("#c9dff0"))
-	draw_string(ThemeDB.fallback_font, Vector2(980, 333), "《光》", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color("#e8dfc8"))
-	draw_circle(Vector2(1080, 260), 27.0, Color("#79868b"))
-	draw_string(ThemeDB.fallback_font, Vector2(1050, 333), "《盲》", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color("#e8dfc8"))
-	# The repeated lower-right route is a visible corridor, distinct from the guard's rightward direction.
-	draw_rect(Rect2(750, 438, 310, 62), Color("#263542"), true)
-	draw_line(Vector2(760, 438), Vector2(1060, 438), Color("#8196a0"), 3.0)
-	draw_string(ThemeDB.fallback_font, Vector2(810, 475), "右下展厅通道", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color("#9eafb7"))
-	# The end wall is physically backed and shown as a wall with a mirror, not an invisible barrier.
-	draw_rect(Rect2(1010, 312, 78, 208), Color("#c2a875"), true)
-	draw_rect(Rect2(1019, 321, 60, 190), Color("#426b82"), true)
-	draw_line(Vector2(1024, 350), Vector2(1073, 478), Color(0.8, 0.95, 1.0, 0.5), 3.0)
-	draw_string(ThemeDB.fallback_font, Vector2(1004, 540), "死路镜子", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#e8dfc8"))
+	# One continuous hall, left to right: entrance, paintings, guard, sculptures, dead-end mirror.
+	draw_string(ThemeDB.fallback_font, Vector2(116, 175), "画作展厅", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color("#b8c7d4"))
+	draw_string(ThemeDB.fallback_font, Vector2(640, 175), "雕塑展厅", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color("#b8c7d4"))
+	# The hall's own entrance: the loop keeps returning Graham to this doorway.
+	draw_rect(Rect2(92, 262, 50, 110), Color("#445866"), true)
+	draw_rect(Rect2(99, 270, 36, 102), Color("#0e1620"), true)
+	draw_string(ThemeDB.fallback_font, Vector2(98, 392), "入口", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#8fa1af"))
+	# Paintings hang at eye level; E is on the floor right below each title.
+	var painting_x := [210.0, 340.0, 455.0]
+	var painting_titles := ["《戴珍珠耳机的少女》", "《星空下的神经》", "《镜中镜》"]
+	for index in range(painting_x.size()):
+		var x: float = painting_x[index]
+		draw_rect(Rect2(x - 50.0, 230, 100, 100), Color("#b49464"), true)
+		draw_rect(Rect2(x - 42.0, 238, 84, 84), Color("#66747a"), true)
+		draw_string(ThemeDB.fallback_font, Vector2(x - painting_titles[index].length() * 6.5, 352), painting_titles[index], HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color("#e8dfc8"))
+	draw_circle(Vector2(210, 268), 15.0, Color("#c9bda1"))
+	draw_circle(Vector2(224, 270), 4.0, Color("#e8e2d0"))
+	draw_arc(Vector2(340, 280), 26.0, 0.0, 5.2, 24, Color("#c8c1a8"), 3.0)
+	draw_arc(Vector2(340, 280), 13.0, 1.0, 6.0, 18, Color("#c8c1a8"), 2.0)
+	draw_rect(Rect2(435, 252, 40, 56), Color("#426b82"), true)
+	draw_rect(Rect2(445, 264, 20, 32), Color("#5d8aa2"), true)
+	# The guard stands at the back of the floor and points right, toward the dead end.
+	draw_circle(Vector2(545, 322), 16.0, Color("#bba88c"))
+	draw_rect(Rect2(528, 338, 34, 60), Color("#566b7a"), true)
+	draw_line(Vector2(562, 352), Vector2(592, 340), Color("#bba88c"), 5.0)
+	draw_string(ThemeDB.fallback_font, Vector2(526, 290), "保安 →", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color("#e8dfc8"))
+	# Sculptures stand on pedestals against the wall; titles sit on the floor edge in front.
+	var sculpture_x := [625.0, 700.0, 775.0, 835.0, 890.0]
+	var sculpture_titles := ["《凝视》", "《机械维纳斯》", "《双生》", "《光》", "《盲》"]
+	for index in range(sculpture_x.size()):
+		var x: float = sculpture_x[index]
+		draw_rect(Rect2(x - 20.0, 326, 40, 46), Color("#4b5966"), true)
+		draw_string(ThemeDB.fallback_font, Vector2(x - sculpture_titles[index].length() * 6.0, 392), sculpture_titles[index], HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#e8dfc8"))
+	draw_circle(Vector2(625, 300), 24.0, Color("#64747b"))
+	draw_circle(Vector2(625, 300), 11.0, Color("#172431"))
+	draw_circle(Vector2(700, 280), 12.0, Color("#9aa6ab"))
+	draw_rect(Rect2(690, 292, 20, 34), Color("#9aa6ab"), true)
+	draw_circle(Vector2(767, 304), 12.0, Color("#b9aa8d"))
+	draw_circle(Vector2(783, 304), 12.0, Color("#b9aa8d"))
+	draw_colored_polygon(PackedVector2Array([Vector2(835, 290), Vector2(852, 324), Vector2(818, 324)]), Color("#c9dff0"))
+	draw_circle(Vector2(890, 300), 16.0, Color("#79868b"))
+	draw_rect(Rect2(880, 314, 20, 12), Color("#79868b"), true)
+	# The far right is where the guard sends you; past the sculptures the floor loops back.
+	draw_rect(Rect2(930, 372, 90, 136), Color("#2c3845"), true)
+	# The end wall carries a full-length mirror, not an invisible barrier.
+	draw_rect(Rect2(950, 200, 66, 172), Color("#c2a875"), true)
+	draw_rect(Rect2(957, 207, 52, 158), Color("#426b82"), true)
+	draw_line(Vector2(962, 230), Vector2(1004, 340), Color(0.8, 0.95, 1.0, 0.5), 3.0)
+	draw_string(ThemeDB.fallback_font, Vector2(947, 392), "尽头的镜子", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#e8dfc8"))
 
 func _draw_s03_gallery() -> void:
 	draw_string(ThemeDB.fallback_font, Vector2(116, 175), "镜子展厅尽头", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color("#b8c7d4"))
@@ -877,7 +891,8 @@ func _enter_s02_after_s01() -> void:
 	chapter_state.set_map_state(&"Museum_S02_Loop")
 	chapter_state.set_player_goal(&"explore_the_gallery")
 	chapter_state.mark_story_event(&"s02_started")
-	player.position.x = 560.0
+	# Through the S01 door Graham arrives at this hall's entrance, on the left.
+	player.position.x = 120.0
 	objective_label.text = "继续探索美术馆"
 	_show_dialogue("蓝湖：往里面走吧。保安应该在前面。")
 	_update_ui()
@@ -907,10 +922,8 @@ func _try_s02_interact() -> void:
 	elif object_name == "DeadEnd":
 		chapter_state.mark_event(&"s02_dead_end_observed")
 		_show_dialogue("右边的通路明明能走到尽头。\n尽头的墙上挂着一面镜子。")
-	elif object_name == "EternalGaze":
-		_show_dialogue("《观看的永恒》：融化的眼球浮在空荡的画面里。\n轮廓里藏着一句话：时间在此失去意义。")
-	elif object_name == "NotAnEye":
-		_show_dialogue("《这不是一只眼睛》：画着眼睛，下面却写着“这不是一只眼睛”。")
+	elif object_name == "MirrorInMirror":
+		_show_dialogue("《镜中镜》：画里挂着一面镜子。\n镜子里映出的房间，比画外的房间多一扇门。")
 	elif object_name == "PearlHeadphones":
 		_show_dialogue("《戴珍珠耳机的少女》：机器人少女戴着耳机。\n换一个角度，她的脸就变了。")
 	elif object_name == "StarryNerves":
@@ -1434,11 +1447,12 @@ func _update_s02_loop_trigger() -> void:
 		return
 	if not chapter_state.has_event(&"s02_guard_observed"):
 		return
-	if absf(player.position.x - 930.0) > 72.0:
+	# Walking on past the sculptures toward the dead end (x >= 945) loops back to the entrance.
+	if absf(player.position.x - 975.0) > 30.0:
 		return
 	s02_loop_triggered = true
 	s02_loop_count += 1
-	player.position = Vector2(560, 520)
+	player.position.x = 120.0
 	if s02_loop_count == 1:
 		_show_dialogue("格雷汉：……这里是入口。\n我们是不是走回来了？")
 	else:
