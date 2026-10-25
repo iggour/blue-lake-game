@@ -30,17 +30,23 @@ func _run() -> void:
 	await _walk_to_x(1012.0)
 	_check(main.s01_active, "closed door does not start S02")
 
+	# Reading the exit sign too early names the exhibits still to read.
+	await _walk_to_x(955.0)
+	await _press_e_expecting("ExitSign")
+	_check(not main.s01_gate_open, "door stays shut before the exhibits are read")
+	_check(main.dialogue_label.text.contains("《这不是一只眼睛》") and main.dialogue_label.text.contains("旧照片"), "exit sign lists the unread exhibits")
+	await _shot("s01_1b_reminder")
+
 	await _walk_to_x(170.0)
 	await _press_e_expecting("EntrancePhoto")
 	await _shot("s01_2_photo")
 	await _walk_to_x(390.0)
 	await _press_e_expecting("FirstExhibit")
 	await _walk_to_x(608.0)
+	_check(not main.s01_gate_open, "door still shut while one painting is unread")
 	await _press_e_expecting("SecondExhibit")
-	await _walk_to_x(955.0)
-	await _press_e_expecting("ExitSign")
-	_check(main.s01_gate_open, "door opens after the three observations")
-	_check(main.s01_active, "completing at the sign does not jump into S02 by itself")
+	_check(main.s01_gate_open, "door opens once every exhibit and the exit have been read")
+	_check(main.s01_active, "completing S01 does not jump into S02 by itself")
 	await _shot("s01_3_door_open")
 
 	await _walk_to_x(1020.0)

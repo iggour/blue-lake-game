@@ -68,6 +68,8 @@ var s07_mirror_observed := false
 var s07_mirror_trace_found := false
 var s07_window_observed := false
 var s07_window_trace_found := false
+# S07 revisits two real rooms: "gallery" (the 《窗》 room of S04) and "hall" (the S02/S03 hall).
+var s07_room := "gallery"
 var s07_interactables: Array[Dictionary] = []
 var s08_active := false
 var s08_window_observed := false
@@ -294,12 +296,18 @@ func _build_gallery() -> void:
 		{"name":"CentralPlatform", "position":Vector2(576,520), "radius":100.0},
 		{"name":"EscapeWindow", "position":Vector2(980,520), "radius":82.0}
 	]
+	# S07 items belong to one of the two revisited rooms.
 	s07_interactables = [
-		{"name":"ReturnMirror", "position":Vector2(205,520), "radius":82.0},
-		{"name":"ReturnWindow", "position":Vector2(840,520), "radius":82.0}
+		{"name":"ReturnWindow", "position":Vector2(590,440), "radius":60.0, "hint_y":376.0, "room":"gallery"},
+		{"name":"ReturnMirror", "position":Vector2(983,440), "radius":38.0, "hint_y":398.0, "room":"hall"}
 	]
+	for item in s02_interactables:
+		if item.name != "DeadEnd":
+			var s07_item: Dictionary = item.duplicate()
+			s07_item["room"] = "hall"
+			s07_interactables.append(s07_item)
 	s08_interactables = [
-		{"name":"FinalWindow", "position":Vector2(840,520), "radius":82.0}
+		{"name":"FinalWindow", "position":Vector2(590,440), "radius":60.0, "hint_y":376.0}
 	]
 	queue_redraw()
 
@@ -478,7 +486,9 @@ func _draw_s04_gallery() -> void:
 	else:
 		draw_circle(Vector2(590, 285), 20.0, Color("#d9b575"))
 		draw_line(Vector2(562, 318), Vector2(618, 252), Color("#b6a280"), 6.0)
-	draw_string(ThemeDB.fallback_font, Vector2(570, 362), "《窗》", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color("#e8dfc8"))
+	if not (s05_active or s08_active):
+		# In S05/S08 the operable 《窗》 is drawn over this one with its own title.
+		draw_string(ThemeDB.fallback_font, Vector2(570, 362), "《窗》", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color("#e8dfc8"))
 	# The sensor lamp is a wall spotlight aimed at 《窗》; the switch sits beside it.
 	draw_rect(Rect2(490, 316, 20, 6), Color("#8796a2"), true)
 	draw_line(Vector2(500, 316), Vector2(500, 306), Color("#b8c7d4"), 3.0)
@@ -517,16 +527,16 @@ func _draw_s04_gallery() -> void:
 		draw_rect(Rect2(84, 140, 936, 368), Color(0.02, 0.04, 0.08, 0.55), true)
 		draw_circle(Vector2(590, 285), 26.0, Color(0.52, 0.9, 0.98, 0.72))
 		draw_arc(Vector2(590, 285), 38.0, 0.0, TAU, 32, Color("#bfe8ff"), 3.0)
-	if s04_pigment_applied:
+	if s04_active and s04_pigment_applied:
 		draw_arc(Vector2(player.position.x, player.position.y - 4.0), 23.0, 0.0, TAU, 24, Color("#bfe8ff"), 2.0)
-	if s04_visitor_moved:
+	if s04_active and s04_visitor_moved:
 		draw_string(ThemeDB.fallback_font, Vector2(540, 205), "这幅画里有光。", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color("#bfe8ff"))
 
 func _draw_s05_gallery() -> void:
 	# S05 is the first authored intervention: a painting becomes operable as a window.
 	# It is the same 《窗》 that hung between the visitor and the restorer in S04, on the wall.
 	var w := S05_WINDOW_CENTER
-	draw_string(ThemeDB.fallback_font, Vector2(640, 175), "画作展厅", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color("#b8c7d4"))
+	_draw_s04_gallery()
 	var original_window_position := window_node.position
 	window_node.position = w
 	_draw_object(window_node, "Window", Color("#5ca8c7"), "《窗》")
@@ -575,32 +585,50 @@ func _draw_s06_gallery() -> void:
 		draw_string(ThemeDB.fallback_font, Vector2(s06_guard_chase_x - 42.0, 505), "保安追来", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#f0c6a5"))
 
 func _draw_s07_gallery() -> void:
-	# S07 reuses the old spaces and adds only a second layer of reading.
-	draw_string(ThemeDB.fallback_font, Vector2(116, 175), "回访：镜子展厅", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color("#b8c7d4"))
-	draw_string(ThemeDB.fallback_font, Vector2(760, 175), "回访：《窗》", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color("#b8c7d4"))
-	var original_mirror_position := mirror_node.position
-	mirror_node.position = Vector2(205, 410)
-	_draw_object(mirror_node, "Mirror", Color("#426b82"), "镜子")
-	mirror_node.position = original_mirror_position
-	_draw_object(window_node, "Window", Color("#5ca8c7"), "《窗》")
-	draw_string(ThemeDB.fallback_font, Vector2(120, 390), "同一个地方，仍然有没读完的内容。", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color("#aab8c2"))
-	if s07_mirror_trace_found:
-		draw_arc(Vector2(205, 410), 72.0, -2.6, 0.4, 24, Color("#bfe8ff"), 3.0)
-		draw_string(ThemeDB.fallback_font, Vector2(120, 425), "镜后留下了回访的痕迹。", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color("#bfe8ff"))
-	if s07_window_trace_found:
-		draw_line(Vector2(795, 410), Vector2(885, 410), Color("#bfe8ff"), 3.0)
-		draw_string(ThemeDB.fallback_font, Vector2(720, 390), "《窗》回应了第二次观看。", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color("#bfe8ff"))
+	# S07 walks back through the real rooms; each keeps a second layer only Blue Lake can read.
+	if s07_room == "hall":
+		_draw_s02_gallery()
+		draw_rect(Rect2(62, 262, 22, 110), Color(0.75, 0.92, 1.0, 0.35), false, 2.0)
+		if blue_lake_active and not s07_mirror_trace_found:
+			var glow := 0.8 if chalk_hover_target == "ReturnMirror" else 0.4
+			draw_circle(S03_MIRROR_CENTER, 55.0, Color(0.55, 0.88, 1.0, 0.11))
+			draw_arc(S03_MIRROR_CENTER, 55.0, 0.0, TAU, 32, Color(0.75, 0.91, 1.0, glow), 2.0)
+		if s07_mirror_trace_found:
+			for i in range(3):
+				var y := 240.0 + i * 36.0
+				draw_line(Vector2(962, y), Vector2(1004, y + 14.0), Color("#dff5ff"), 2.0)
+			draw_string(ThemeDB.fallback_font, Vector2(770, 196), "镜面上留着第二层痕迹。", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color("#bfe8ff"))
+	else:
+		_draw_s04_gallery()
+		var w := S05_WINDOW_CENTER
+		if blue_lake_active and s07_mirror_trace_found and not s07_window_trace_found:
+			var glow := 0.8 if chalk_hover_target == "ReturnWindow" else 0.4
+			draw_circle(w, 66.0, Color(0.4, 0.85, 1.0, 0.11))
+			draw_arc(w, 66.0, 0.0, TAU, 32, Color(0.75, 0.91, 1.0, glow), 2.0)
+		if s07_window_trace_found:
+			draw_line(w + Vector2(-50, -20), w + Vector2(50, -20), Color("#dff5ff"), 3.0)
+			draw_line(w + Vector2(-50, 20), w + Vector2(50, 20), Color("#dff5ff"), 3.0)
+			draw_string(ThemeDB.fallback_font, w + Vector2(75, -30), "《窗》回应了第二次观看。", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color("#bfe8ff"))
 
 func _draw_s08_gallery() -> void:
-	draw_string(ThemeDB.fallback_font, Vector2(116, 175), "真正出口", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color("#b8c7d4"))
+	# The true exit is the same 《窗》 on the same wall, now opening outward.
+	var w := S05_WINDOW_CENTER
+	_draw_s04_gallery()
+	var original_window_position := window_node.position
+	window_node.position = w
 	_draw_object(window_node, "Window", Color("#5ca8c7"), "《窗》")
+	window_node.position = original_window_position
+	if blue_lake_active and not s08_window_open:
+		var glow := 0.8 if chalk_hover_target == "FinalWindow" else 0.4
+		draw_circle(w, 66.0, Color(0.4, 0.85, 1.0, 0.11))
+		draw_arc(w, 66.0, 0.0, TAU, 32, Color(0.75, 0.91, 1.0, glow), 2.0)
 	if not s08_window_open:
-		draw_string(ThemeDB.fallback_font, Vector2(690, 365), "再次来到这里，窗的边界已经不一样。", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color("#d6e8f0"))
+		draw_string(ThemeDB.fallback_font, w + Vector2(75, -30), "窗的边界已经不一样。", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color("#d6e8f0"))
 	else:
-		draw_rect(Rect2(782, 404, 116, 116), Color("#cdefff"), true)
-		draw_rect(Rect2(792, 414, 96, 96), Color("#8bcfe9"), true)
-		draw_circle(Vector2(840, 462), 46.0, Color(0.96, 0.99, 1.0, 0.46))
-		draw_string(ThemeDB.fallback_font, Vector2(675, 365), "外部的光从窗后进来。", HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color("#f6e5a7"))
+		draw_rect(Rect2(w - Vector2(58, 58), Vector2(116, 116)), Color("#cdefff"), true)
+		draw_rect(Rect2(w - Vector2(48, 48), Vector2(96, 96)), Color("#8bcfe9"), true)
+		draw_circle(w, 46.0, Color(0.96, 0.99, 1.0, 0.46))
+		draw_string(ThemeDB.fallback_font, w + Vector2(75, -30), "外部的光从窗后进来。", HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color("#f6e5a7"))
 
 func _make_object(kind: String, pos: Vector2, color: Color, label: String) -> Node2D:
 	var node := Node2D.new()
@@ -769,9 +797,9 @@ func _finish_blue_lake_transformation() -> void:
 	elif s06_active:
 		_show_dialogue("Blue Lake：现在，看中央展台的空白处。")
 	elif s07_active:
-		_show_dialogue("Blue Lake：同一个地方，在第二次观看时会留下不同的痕迹。")
+		_show_dialogue("Blue Lake：同一个地方，第二次看会不一样。" + _s07_chalk_hint())
 	elif s08_active:
-		_show_dialogue("Blue Lake：这次不一样。")
+		_show_dialogue("Blue Lake：这次不一样。把粉笔移到《窗》上，点左键。")
 	else:
 		_show_dialogue("Blue Lake 已经变成粉笔。")
 	_update_ui()
@@ -868,18 +896,35 @@ func _try_s01_interact() -> void:
 		chapter_state.mark_event(&"s01_first_exhibit_observed")
 		_show_dialogue("《观看的永恒》：融化的不是时钟，而是眼球。\n说明牌写着：时间在此失去意义。")
 	elif object_name == "SecondExhibit":
+		chapter_state.mark_event(&"s01_second_exhibit_observed")
 		_show_dialogue("《这不是一只眼睛》：画面是一只眼睛，说明牌却说“这不是一只眼睛”。")
 	elif object_name == "ExitSign":
 		chapter_state.mark_event(&"s01_exit_area_observed")
-		_show_dialogue("出口指向展厅深处。\n格雷汉：这扇门现在打不开。")
+		var unread := _s01_unread_exhibits()
+		if unread.is_empty():
+			_show_dialogue("出口指向展厅深处。\n格雷汉：这扇门现在打不开。")
+		else:
+			# Say which ones are left, so the closed door never reads as a dead end.
+			_show_dialogue("门打不开。还没看：" + "、".join(unread) + "。\nBlue Lake：先把这里的画看完。")
+	if object_name != "ExitSign" and _s01_unread_exhibits().is_empty() and not chapter_state.has_event(&"s01_exit_area_observed"):
+		_show_dialogue(dialogue_label.text + "\nBlue Lake：画都看过了。去出口那边看看。")
 	_try_complete_s01()
+
+## The entrance exhibits that must be read before the S01 door opens.
+func _s01_unread_exhibits() -> PackedStringArray:
+	var unread := PackedStringArray()
+	if not chapter_state.has_event(&"s01_photo_observed"):
+		unread.append("旧照片")
+	if not chapter_state.has_event(&"s01_first_exhibit_observed"):
+		unread.append("《观看的永恒》")
+	if not chapter_state.has_event(&"s01_second_exhibit_observed"):
+		unread.append("《这不是一只眼睛》")
+	return unread
 
 func _try_complete_s01() -> void:
 	if s01_completion_started:
 		return
-	if not chapter_state.has_event(&"s01_photo_observed"):
-		return
-	if not chapter_state.has_event(&"s01_first_exhibit_observed"):
+	if not _s01_unread_exhibits().is_empty():
 		return
 	if not chapter_state.has_event(&"s01_exit_area_observed"):
 		return
@@ -1288,27 +1333,39 @@ func _try_s07_interact() -> void:
 		if not s07_mirror_observed:
 			s07_mirror_observed = true
 			chapter_state.mark_event(&"s07_mirror_area_revisited")
-			_show_dialogue("这里我们已经来过。\nBlue Lake：同一个地方，在不同观察方式下会留下不同的痕迹。")
+			_show_dialogue("这里我们已经来过。\nBlue Lake：同一个地方，换一种看法会留下不同的痕迹。按 Space。")
 			_show_space_prompt()
+		elif s07_mirror_trace_found:
+			_show_dialogue("镜面上的痕迹已经显现。回《窗》那里去。")
 		else:
-			_show_dialogue("镜子后的痕迹已经显现。")
+			_show_dialogue("Blue Lake：按 Space，用我的眼睛再看一次镜子。")
+			_show_space_prompt()
 	elif object_name == "ReturnWindow":
 		if not s07_mirror_trace_found:
-			_show_dialogue("Blue Lake：先别急着看《窗》。镜子留下的东西还没有读完。")
+			_show_dialogue("Blue Lake：先别急着看《窗》。尽头的镜子那里还有没读完的东西。\n穿过右边的粉笔门。")
 			return
 		if not s07_window_observed:
 			s07_window_observed = true
 			chapter_state.mark_event(&"s07_window_area_revisited")
-			_show_dialogue("《窗》还是原来的《窗》。\nBlue Lake：但它记得你已经看过一次。")
+			_show_dialogue("《窗》还是原来的《窗》。\nBlue Lake：但它记得你已经看过一次。按 Space。")
 			_show_space_prompt()
 		else:
 			_show_dialogue("Blue Lake：这一次，你已经知道该看哪里了。")
+	else:
+		_describe_hall_exhibit(object_name)
 	queue_redraw()
 
+## What Blue Lake says once the Chalk is out in S07, depending on the room and progress.
+func _s07_chalk_hint() -> String:
+	if s07_room == "hall":
+		if s07_mirror_trace_found:
+			return "镜子已经读完了。回《窗》那里。"
+		return "把粉笔移到镜子上，点左键。"
+	if s07_mirror_trace_found:
+		return "把粉笔移到《窗》上，点左键。"
+	return "这里暂时没有新的痕迹。先去尽头的镜子。"
+
 func _try_toggle_s07_blue_lake() -> void:
-	if not s07_mirror_observed and not s07_window_observed:
-		_show_dialogue("Blue Lake：先重新观察一个你已经走过的地方。")
-		return
 	if not blue_lake_active and not blue_lake_transform_completed:
 		player.input_locked = true
 		_hide_space_prompt()
@@ -1318,24 +1375,26 @@ func _try_toggle_s07_blue_lake() -> void:
 	blue_lake_active = not blue_lake_active
 	chalk_cursor.set_active(blue_lake_active)
 	visual_mode = "Chalk Interaction" if blue_lake_active else "Standard"
-	_show_dialogue("Blue Lake：" + ("痕迹就在这里。用粉笔碰它。" if blue_lake_active else "……先收起来。"))
+	_show_dialogue("Blue Lake：" + (_s07_chalk_hint() if blue_lake_active else "……先收起来。"))
 	_update_ui()
 	queue_redraw()
 
 func _try_s07_chalk_interaction() -> void:
 	if chalk_hover_target == "ReturnMirror" and not s07_mirror_trace_found:
 		s07_mirror_trace_found = true
+		_hide_space_prompt()
 		blue_lake_active = false
 		chalk_cursor.set_active(false)
 		visual_mode = "Return Mirror Layer"
 		chapter_state.mark_event(&"s07_mirror_trace_found")
-		_show_dialogue("Blue Lake：你漏掉的不是一个物件，是另一种看法。")
-		objective_label.text = "回到《窗》附近"
+		_show_dialogue("Blue Lake：你漏掉的不是一个物件，是另一种看法。\n回《窗》那里去。")
+		objective_label.text = "穿过左边的粉笔门，回到《窗》前"
 		_update_ui()
 		queue_redraw()
 		return
-	if chalk_hover_target == "ReturnWindow" and s07_window_observed and not s07_window_trace_found:
+	if chalk_hover_target == "ReturnWindow" and s07_mirror_trace_found and not s07_window_trace_found:
 		s07_window_trace_found = true
+		_hide_space_prompt()
 		blue_lake_active = false
 		chalk_cursor.set_active(false)
 		visual_mode = "Return Window Layer"
@@ -1359,7 +1418,7 @@ func _try_s08_interact() -> void:
 	if not s08_window_observed:
 		s08_window_observed = true
 		chapter_state.mark_event(&"s08_window_reobserved")
-		_show_dialogue("这次不一样。\n《窗》已经不像一幅画了。")
+		_show_dialogue("这次不一样。《窗》已经不像一幅画了。\nBlue Lake：按 Space。")
 		_show_space_prompt()
 	else:
 		_show_dialogue("Blue Lake：你已经知道该怎么打开它。")
@@ -1378,7 +1437,7 @@ func _try_toggle_s08_blue_lake() -> void:
 	blue_lake_active = not blue_lake_active
 	chalk_cursor.set_active(blue_lake_active)
 	visual_mode = "Chalk Interaction" if blue_lake_active else "Standard"
-	_show_dialogue("Blue Lake：" + ("用粉笔打开它。" if blue_lake_active else "……先收起来。"))
+	_show_dialogue("Blue Lake：" + ("把粉笔移到《窗》上，点左键，打开它。" if blue_lake_active else "……先收起来。"))
 	_update_ui()
 	queue_redraw()
 
@@ -1413,7 +1472,7 @@ func _enter_s08_after_s07() -> void:
 	blue_lake_active = false
 	blue_lake_transform_completed = false
 	chalk_cursor.set_active(false)
-	player.position = Vector2(840, 430)
+	player.position.x = S05_WINDOW_CENTER.x
 	chapter_state.advance_to(ChapterState.Slice.S08_TRUE_EXIT)
 	chapter_state.set_map_state(&"Museum_S08_TrueExit")
 	chapter_state.set_player_goal(&"reopen_the_window")
@@ -1435,13 +1494,20 @@ func _enter_s07_after_s06() -> void:
 	blue_lake_active = false
 	blue_lake_transform_completed = false
 	chalk_cursor.set_active(false)
-	player.position = Vector2(190, 430)
+	# Back through the opened 《窗》 into its room; the lights are on again.
+	s07_room = "gallery"
+	s04_lights_off = false
+	# S07 walks through the hall's chalk door on the left wall; it has been open since S03.
+	if is_instance_valid(west_exit_body):
+		west_exit_body.collision_layer = 0
+		west_exit_body.collision_mask = 0
+	player.position.x = S05_WINDOW_CENTER.x
 	chapter_state.advance_to(ChapterState.Slice.S07_RETURN)
 	chapter_state.set_map_state(&"Museum_S07_Return")
 	chapter_state.set_player_goal(&"reobserve_old_areas")
 	chapter_state.mark_story_event(&"s07_started")
-	objective_label.text = "重新观看旧区域"
-	_show_dialogue("蓝湖：我们是不是漏掉了什么？")
+	objective_label.text = "穿过右边的粉笔门，回到尽头的镜子"
+	_show_dialogue("蓝湖：我们是不是漏掉了什么？\n回尽头的镜子那里，再看一次。")
 	_update_ui()
 	queue_redraw()
 
@@ -1509,6 +1575,17 @@ func _update_route_transitions() -> void:
 		return
 	if s01_active and s01_completion_started and player.position.x >= 1012.0:
 		_enter_s02_after_s01()
+		return
+	# S07: the chalk doors join the 《窗》 room (right wall) and the hall (left wall).
+	if s07_active:
+		if s07_room == "gallery" and player.position.x >= 1000.0:
+			s07_room = "hall"
+			player.position.x = 90.0
+			queue_redraw()
+		elif s07_room == "hall" and player.position.x <= 50.0:
+			s07_room = "gallery"
+			player.position.x = 985.0
+			queue_redraw()
 		return
 	# PDF puzzle 1: turn your back on the mirror and walk through the wall that has no door.
 	if s03_active and s03_mirror_intervened and not s03_mirror_crossed and player.position.x <= 50.0:
@@ -1592,6 +1669,8 @@ func _get_nearest_s07_interactable() -> Dictionary:
 	var nearest: Dictionary = {}
 	var best := 99999.0
 	for item in s07_interactables:
+		if item.get("room", "") != s07_room:
+			continue
 		var distance: float = absf(player.position.x - item.position.x)
 		if distance < item.radius and distance < best:
 			best = distance
@@ -1820,12 +1899,12 @@ func _update_chalk_hover() -> void:
 		if not s06_sensor_revealed and mouse_position.distance_to(Vector2(576, 292)) <= 62.0:
 			chalk_hover_target = "Sensor"
 	elif S07_ENABLED and s07_active:
-		if not s07_mirror_trace_found and mouse_position.distance_to(Vector2(205, 410)) <= 62.0:
+		if s07_room == "hall" and not s07_mirror_trace_found and mouse_position.distance_to(S03_MIRROR_CENTER) <= 55.0:
 			chalk_hover_target = "ReturnMirror"
-		elif s07_window_observed and not s07_window_trace_found and mouse_position.distance_to(Vector2(840, 410)) <= 68.0:
+		elif s07_room == "gallery" and s07_mirror_trace_found and not s07_window_trace_found and mouse_position.distance_to(S05_WINDOW_CENTER) <= 62.0:
 			chalk_hover_target = "ReturnWindow"
 	elif S08_ENABLED and s08_active:
-		if not s08_window_open and mouse_position.distance_to(Vector2(840, 462)) <= 68.0:
+		if not s08_window_open and mouse_position.distance_to(S05_WINDOW_CENTER) <= 62.0:
 			chalk_hover_target = "FinalWindow"
 	elif LEGACY_PROTOTYPE_FLOW_ENABLED:
 		if not mirror_solved and mouse_position.distance_to(Vector2(205, 230)) <= 62.0:
