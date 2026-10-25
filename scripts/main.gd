@@ -9,6 +9,8 @@ const ChapterStateScript := preload("res://scripts/chapter_state.gd")
 const S03_MIRROR_CENTER := Vector2(983, 286)
 # Wall spotlight aimed at 《窗》 in the S04 room; the Chalk marks it.
 const S04_LAMP_CENTER := Vector2(500, 300)
+# 《窗》 hangs on the wall here in S04 and S05 (same room, same painting).
+const S05_WINDOW_CENTER := Vector2(590, 285)
 
 # Prototype 0.2 is retained as a reference implementation, not as the default
 # Chapter 1 route. Slice-specific content will be reattached deliberately.
@@ -286,7 +288,7 @@ func _build_gallery() -> void:
 		{"name":"PigmentStation", "position":Vector2(250,440), "radius":35.0, "hint_y":398.0}
 	]
 	s05_interactables = [
-		{"name":"Window", "position":Vector2(840,520), "radius":82.0}
+		{"name":"Window", "position":Vector2(590,440), "radius":60.0, "hint_y":376.0}
 	]
 	s06_interactables = [
 		{"name":"CentralPlatform", "position":Vector2(576,520), "radius":100.0},
@@ -306,8 +308,6 @@ func _draw() -> void:
 		_draw_gallery(self)
 	elif scene_state == "theater":
 		_draw_theater(self)
-	elif scene_state == "outside":
-		_draw_outside(self)
 
 func _draw_gallery(room: Node2D) -> void:
 	if scene_state != "gallery":
@@ -524,24 +524,29 @@ func _draw_s04_gallery() -> void:
 
 func _draw_s05_gallery() -> void:
 	# S05 is the first authored intervention: a painting becomes operable as a window.
-	draw_string(ThemeDB.fallback_font, Vector2(116, 175), "中央展厅前室", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color("#b8c7d4"))
-	draw_string(ThemeDB.fallback_font, Vector2(760, 175), "《窗》", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color("#b8c7d4"))
+	# It is the same 《窗》 that hung between the visitor and the restorer in S04, on the wall.
+	var w := S05_WINDOW_CENTER
+	draw_string(ThemeDB.fallback_font, Vector2(640, 175), "画作展厅", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color("#b8c7d4"))
+	var original_window_position := window_node.position
+	window_node.position = w
 	_draw_object(window_node, "Window", Color("#5ca8c7"), "《窗》")
-	if s05_window_observed and not s05_window_open:
-		draw_string(ThemeDB.fallback_font, Vector2(690, 365), "它看起来像一幅画。", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color("#aab8c2"))
-	if blue_lake_active and chalk_hover_target == "Window" and not s05_window_open:
-		draw_circle(Vector2(840, 462), 66.0, Color(0.4, 0.85, 1.0, 0.11))
-		draw_arc(Vector2(840, 462), 66.0, 0.0, TAU, 32, Color("#bfe8ff"), 2.0)
+	window_node.position = original_window_position
+	if s05_window_observed and not s05_window_handle_found:
+		draw_string(ThemeDB.fallback_font, w + Vector2(75, -30), "它看起来像一幅画。", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color("#aab8c2"))
+	if blue_lake_active and not s05_window_open:
+		var glow := 0.8 if chalk_hover_target == "Window" else 0.4
+		draw_circle(w, 66.0, Color(0.4, 0.85, 1.0, 0.11))
+		draw_arc(w, 66.0, 0.0, TAU, 32, Color(0.75, 0.91, 1.0, glow), 2.0)
 	if s05_window_handle_found and not s05_window_open:
-		draw_circle(Vector2(874, 462), 8.0, Color("#f6e5a7"))
-		draw_arc(Vector2(874, 462), 18.0, 0.0, TAU, 24, Color("#bfe8ff"), 2.0)
-		draw_string(ThemeDB.fallback_font, Vector2(690, 400), "把手显现了。", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color("#d6e8f0"))
+		draw_circle(w + Vector2(34, 0), 8.0, Color("#f6e5a7"))
+		draw_arc(w + Vector2(34, 0), 18.0, 0.0, TAU, 24, Color("#bfe8ff"), 2.0)
+		draw_string(ThemeDB.fallback_font, w + Vector2(75, -30), "把手显现了。", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color("#d6e8f0"))
 	if s05_window_open:
-		draw_rect(Rect2(782, 404, 116, 116), Color("#8cdcff"), true)
-		draw_rect(Rect2(792, 414, 96, 96), Color("#172c3c"), true)
-		draw_circle(Vector2(840, 462), 42.0, Color(0.25, 0.72, 0.95, 0.24))
-		draw_string(ThemeDB.fallback_font, Vector2(660, 365), "窗后的空间通向中央展台。", HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color("#bfe8ff"))
-		draw_string(ThemeDB.fallback_font, Vector2(660, 400), "这不是出口。", HORIZONTAL_ALIGNMENT_LEFT, -1, 17, Color("#f6e5a7"))
+		draw_rect(Rect2(w - Vector2(58, 58), Vector2(116, 116)), Color("#8cdcff"), true)
+		draw_rect(Rect2(w - Vector2(48, 48), Vector2(96, 96)), Color("#172c3c"), true)
+		draw_circle(w, 42.0, Color(0.25, 0.72, 0.95, 0.24))
+		draw_string(ThemeDB.fallback_font, w + Vector2(75, -30), "窗后的空间通向中央展台。", HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color("#bfe8ff"))
+		draw_string(ThemeDB.fallback_font, w + Vector2(75, -5), "这不是出口。", HORIZONTAL_ALIGNMENT_LEFT, -1, 17, Color("#f6e5a7"))
 
 func _draw_s06_gallery() -> void:
 	# S06 starts with an empty platform. Blue Lake reveals what ordinary sight omits.
@@ -760,7 +765,7 @@ func _finish_blue_lake_transformation() -> void:
 	elif s04_active:
 		_show_dialogue("Blue Lake：用荧光照一下那盏灯。")
 	elif s05_active:
-		_show_dialogue("Blue Lake：现在，用我去看《窗》。")
+		_show_dialogue("Blue Lake：现在，把粉笔移到《窗》上，点左键。")
 	elif s06_active:
 		_show_dialogue("Blue Lake：现在，看中央展台的空白处。")
 	elif s07_active:
@@ -1091,7 +1096,10 @@ func _try_s05_interact() -> void:
 	if not s05_window_observed:
 		s05_window_observed = true
 		chapter_state.mark_event(&"s05_window_observed")
-		_show_dialogue("这是一幅画。\n……可它看起来太像一扇真正的窗。")
+		_show_dialogue("这是一幅画。……可它看起来太像一扇真正的窗。\nBlue Lake：按 Space，让我来看。")
+		_show_space_prompt()
+	elif not blue_lake_active and not s05_window_open:
+		_show_dialogue("Blue Lake：你把它看成一幅画。可它不只是一幅画。\n按 Space，用粉笔碰一碰它。")
 		_show_space_prompt()
 	else:
 		_show_dialogue("Blue Lake：你把它看成一幅画。可它不只是一幅画。")
@@ -1110,7 +1118,7 @@ func _try_toggle_s05_blue_lake() -> void:
 	blue_lake_active = not blue_lake_active
 	chalk_cursor.set_active(blue_lake_active)
 	visual_mode = "Chalk Interaction" if blue_lake_active else "Standard"
-	_show_dialogue("Blue Lake：" + ("用粉笔碰一碰窗框。" if blue_lake_active else "……先收起来。"))
+	_show_dialogue("Blue Lake：" + (("把粉笔移到《窗》上，点左键，打开它。" if s05_window_handle_found else "把粉笔移到《窗》上，点左键。") if blue_lake_active else "……先收起来。"))
 	_update_ui()
 	queue_redraw()
 
@@ -1123,11 +1131,13 @@ func _try_s05_chalk_interaction() -> void:
 		chalk_cursor.set_active(false)
 		visual_mode = "Window Handle Layer"
 		chapter_state.mark_event(&"s05_window_handle_found")
-		_show_dialogue("Blue Lake：把手一直在那里。只是你以前看不见。")
+		_show_dialogue("Blue Lake：把手一直在那里。只是你以前看不见。\n再按 Space，用粉笔打开它。")
+		_show_space_prompt()
 		_update_ui()
 		queue_redraw()
 		return
 	s05_window_open = true
+	_hide_space_prompt()
 	blue_lake_active = false
 	chalk_cursor.set_active(false)
 	visual_mode = "Window Open Layer"
@@ -1662,24 +1672,8 @@ func _start_transition() -> void:
 	transition.begin()
 
 func _finish_transition() -> void:
-	if s06_chase_active and s06_stolen:
-		scene_state = "outside"
-		var gallery_exit := get_node_or_null("TruthGallery")
-		if gallery_exit:
-			gallery_exit.hide()
-		for body in gallery_bodies:
-			if is_instance_valid(body):
-				body.hide()
-				body.collision_layer = 0
-				body.collision_mask = 0
-		blue_lake_active = false
-		chalk_cursor.set_active(false)
-		player.position = Vector2(576, 430)
-		player.input_locked = false
-		chapter_state.set_map_state(&"Museum_S06_Escape")
-		_show_dialogue("幕布落下，又在窗外打开。格雷汉带着原件逃出了美术馆。")
-		_update_ui()
-		return
+	# Both ways out of the gallery (S08's reopened Window, S06's escape through the window)
+	# end the same way: the curtain opens on the Truth Theater stage.
 	scene_state = "theater"
 	var gallery := get_node_or_null("TruthGallery")
 	if gallery:
@@ -1701,6 +1695,13 @@ func _finish_transition() -> void:
 		chapter_state.mark_story_event(&"theater_entered")
 		objective_label.text = "真理美术馆 · 完"
 		_show_dialogue("窗帘被风吹动，拉了上来。不，不是窗帘——是幕布。\n灯光亮起。你站在舞台上。")
+	elif s06_stolen:
+		s06_chase_active = false
+		chapter_state.set_map_state(&"Theater_Stage_Entrance")
+		chapter_state.mark_story_event(&"s06_escaped_with_original")
+		chapter_state.mark_story_event(&"theater_entered")
+		objective_label.text = "真理美术馆 · 完"
+		_show_dialogue("格雷汉带着原件翻出窗户。身后的窗帘落下——不，是幕布。\n灯光亮起。你站在舞台上。")
 	else:
 		_show_dialogue("真理剧院：幕布落下，又打开了。你已经进入另一种空间。\nPrototype 0.2 检查流程完成。")
 	_update_ui()
@@ -1724,17 +1725,6 @@ func _draw_theater(node: Node2D) -> void:
 		var spot_x := player.position.x
 		draw_colored_polygon(PackedVector2Array([Vector2(spot_x - 18.0, 120), Vector2(spot_x + 18.0, 120), Vector2(spot_x + 70.0, 515), Vector2(spot_x - 70.0, 515)]), Color(1.0, 0.94, 0.75, 0.16))
 		draw_circle(Vector2(spot_x, 505), 62.0, Color(1.0, 0.94, 0.75, 0.14))
-
-func _draw_outside(node: Node2D) -> void:
-	draw_rect(Rect2(0, 58, 1152, 590), Color("#b9d4d2"))
-	draw_rect(Rect2(0, 360, 1152, 288), Color("#82999a"))
-	draw_circle(Vector2(885, 170), 96.0, Color(1.0, 0.92, 0.67, 0.78))
-	draw_rect(Rect2(118, 170, 360, 270), Color("#d6c9a6"), true)
-	draw_rect(Rect2(142, 194, 312, 222), Color("#6f8587"), true)
-	draw_rect(Rect2(190, 230, 216, 186), Color("#b9e2e6"), true)
-	draw_line(Vector2(298, 230), Vector2(298, 416), Color("#edf8f4"), 5.0)
-	draw_string(ThemeDB.fallback_font, Vector2(540, 300), "美术馆外", HORIZONTAL_ALIGNMENT_LEFT, -1, 34, Color("#243b47"))
-	draw_string(ThemeDB.fallback_font, Vector2(500, 360), "你终于看见了出口。", HORIZONTAL_ALIGNMENT_LEFT, -1, 20, Color("#314f5b"))
 
 func _show_dialogue(text: String) -> void:
 	if dialogue_label:
@@ -1824,7 +1814,7 @@ func _update_chalk_hover() -> void:
 		if s04_pigment_applied and not s04_lamp_observed and mouse_position.distance_to(S04_LAMP_CENTER) <= 40.0:
 			chalk_hover_target = "Lamp"
 	elif S05_ENABLED and s05_active:
-		if not s05_window_open and mouse_position.distance_to(Vector2(840, 462)) <= 68.0:
+		if not s05_window_open and mouse_position.distance_to(S05_WINDOW_CENTER) <= 62.0:
 			chalk_hover_target = "Window"
 	elif S06_ENABLED and s06_active:
 		if not s06_sensor_revealed and mouse_position.distance_to(Vector2(576, 292)) <= 62.0:
