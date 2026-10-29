@@ -1,0 +1,20 @@
+{
+  "view": [
+    1152,
+    648
+  ],
+  "texture_scale": 0.5,
+  "window_center": [
+    590,
+    300
+  ],
+  "window_size": [
+    150,
+    210
+  ],
+  "wall_base_y": 524,
+  "floor": [
+    485,
+    570
+  ]
+}

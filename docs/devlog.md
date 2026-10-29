@@ -418,3 +418,52 @@ S01：
   - 导入素材时建议按房间逐个把绘制代码换成独立场景里的 Sprite2D / AnimatedSprite2D 节点，这时正适合按 Slice 拆分 `main.gd`（待决 e，需用户同意）。
   - 台词目前写在 `main.gd` 的 `_show_dialogue("…")` 里；更方便的做法是把台词集中到一个表格文件（按 ID 索引），用户直接在表格里改。这一步需用户同意后单独一轮做。
 - 本条记录在本地提交，未推送。
+
+---
+
+## 2026-10-27 — S05 照片美术风格样张（Claude，经 Cowork 桌面会话）
+
+### 背景
+用户为第一章美术选定“照片取材 + 双层”路线：普通层是处理过的博物馆照片，蓝湖层是蓝屏色 + 白色粉笔/代码。冷暖分工采用方案 B（入口暖旧 → 深处冷空），样张用 S05《窗》所在的墙。取材整理见 `art/notes/museum1_review.md`、`museum2_review.md`、`windows_review.md`。
+
+### 做了什么
+- **独立的样张场景**，没有改 `main.gd` 和章节流程：
+  - `scenes/style_sample/s05_style_sample.tscn` + `scripts/style_sample/s05_style_sample.gd`
+  - 复用 `player.gd`、`chalk_cursor.gd`。
+  - 操作：WASD 移动，E 观察《窗》，Space 进入/退出蓝湖，左键用粉笔点《窗》。第一次点显现把手，第二次点打开。
+  - 把手显现后，回到普通世界也一直能看见（“把手一直在那里”）。
+  - 台词取自游戏现有对白，外加两句新写的：开场“这间展厅的灯已经关了……”、普通世界里看到把手时“我刚才明明看过这里”。
+- **蓝湖显现方式**：新增 `shaders/blue_lake_reveal.gdshader`。蓝湖层从格雷汉的位置像水一样向外扩散，边缘是颗粒状的粉笔边；退出时反向收回。
+- **美术素材**：`assets/style_sample/`，2304×1296，即游戏视口的 2 倍，场景里缩放 0.5。
+  - 由 `tools/art/s05_style_sample.py` 从 `art/raw/museum2/IMG_1897.JPG` 生成，可重复运行。
+  - 处理步骤：透视校正；移除原照片里的两件展出作品；冷调降光（灯已关）；画作把暖光投到真实墙面和抛光地面上。
+  - 《窗》：程序绘制的哥特尖拱窗，油画化处理。
+  - 蓝湖层：照片边缘转成粉笔线，墙上是淡淡的代码文字，《窗》用粉笔重描，玻璃上有排线。
+  - 布局数据写在 `assets/style_sample/s05_layout.json`。
+- 新建 `docs/asset_sources.md`（素材来源登记），以后每个进入游戏的素材都登记一行。
+
+### 怎么测试的
+- 在 Linux 版 Godot 4.7.2（与本机同版本）上运行：
+  - 新脚本 `--check-only`：无错误。
+  - 新测试 `tests/test_style_sample_s05.gd`：无界面和带窗口（xvfb）都 `TEST PASS`，覆盖贴图加载、E 描述、蓝湖外点击无效、点画外无效、把手、打开、普通层把手常驻。
+  - 原有 8 个测试仍全部 `TEST PASS`。
+- 截图：`.artifacts/screenshots/sample_1_normal.png` 至 `sample_7_normal_open.png`。
+- 用户尚未在本机试玩。
+
+### 本机运行样张
+- 编辑器里打开 `scenes/style_sample/s05_style_sample.tscn`，按 F6（运行当前场景）。
+- 或用命令行：`"$G" --path . scenes/style_sample/s05_style_sample.tscn`
+- 第一次打开时，Godot 会为新贴图生成 `.import` 文件，属于正常现象。
+
+### 还没做完的
+- 格雷汉仍是占位圆形小人，放大了 2.6 倍，以匹配照片房间的比例。
+- 《窗》的尺寸（150×210）比正式流程里的 100×120 大。如果采用，需要同时调整 S04/S05 的布局与点击半径。
+- 样张未接入正式流程。
+- 本轮文件**尚未 git commit**：Cowork 会话默认不能删除文件，在用户文件夹里跑 git 会留下锁文件。请用户或 Claude Code 提交。
+- 建议提交时把 `art/raw/` 加进 `.gitignore`（原图约 100MB，只留在本机）；`art/notes`、`art/contact_sheets`、`poster/` 正常提交。
+
+### 需要用户决定的
+- 普通层的冷暗程度、画作暖光的强弱、蓝湖层代码文字的密度。
+- 《窗》是否保持程序绘制的油画风格，还是由用户手绘重做。
+- 蓝湖“水一样从格雷汉扩散”的显现方式是否保留。
+- 是否把这套双层做法推广到整章；推广时需要先同意按房间拆分 `main.gd`（待决 e）。
