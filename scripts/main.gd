@@ -5,6 +5,20 @@ const CursorScript := preload("res://scripts/chalk_cursor.gd")
 const TransitionScript := preload("res://scripts/transition_overlay.gd")
 const BlueLakeTransformScript := preload("res://scripts/blue_lake_transform.gd")
 const ChapterStateScript := preload("res://scripts/chapter_state.gd")
+# S01 entrance hall. From afar the wall is a face: 《观看的永恒》 and 《这不是一只眼睛》 are the eyes,
+# the key hook is the nose and the exit door is the mouth.
+const S01_PHOTO_RECT := Rect2(110, 215, 140, 100)
+const S01_MAP_RECT := Rect2(270, 225, 80, 90)
+const S01_CLOCKS_RECT := Rect2(430, 185, 190, 110)
+const S01_CLOCK_BACK := Vector2(470, 236)      # left melting eye: its hands turn the photo back
+const S01_CLOCK_FORWARD := Vector2(585, 236)   # right melting eye: forward, and then it melts
+const S01_DOOR_RECT := Rect2(680, 282, 80, 90)
+const S01_HOOK := Vector2(720, 266)
+const S01_EYE_RECT := Rect2(850, 185, 120, 110)
+const S01_EYE_CENTER := Vector2(910, 236)
+const S01_PHOTO_ERAS := ["开幕日", "冬天", "多年以后"]
+const S01_HINT_AFTER := 12.0                   # seconds without progress before the eye starts hinting
+
 # Glass centre of the dead-end mirror at the far right of the S02/S03 hall.
 const S03_MIRROR_CENTER := Vector2(983, 286)
 # Wall spotlight aimed at 《窗》 in the S04 room; the Chalk marks it.
@@ -36,6 +50,17 @@ var s01_active := true
 var s01_completion_started := false
 var s01_gate_open := false
 var s01_interactables: Array[Dictionary] = []
+var s01_era := 1                      # the photo is titled 开幕日 but starts in winter
+var s01_melt := 0                     # 0..3: the right eye melts onto the floor, the door rusts through
+var s01_key_on_hook := false          # mirrors the photo: the key hangs there only on opening day
+var s01_exit_route := ""              # "past" (the key) or "future" (rusted through)
+var s01_clocks_seen := false
+var s01_face_noticed := false
+var s01_idle_time := 0.0
+var s01_eye_look := Vector2(910, 440) # where 《这不是一只眼睛》 is looking (world position)
+var s01_eye_visits := 0
+var s01_eyelid_closed := false
+var s01_dark_overlay: ColorRect
 var s02_active := false
 var s02_completion_started := false
 var s02_loop_count := 0
@@ -144,6 +169,7 @@ func _process(delta: float) -> void:
 	queue_redraw()
 	_update_chalk_hover()
 	_update_interaction_hint()
+	_update_s01(delta)
 	_update_s02_loop_trigger()
 	_update_route_transitions()
 	if s06_chase_active and s06_active and scene_state == "gallery" and player:
@@ -262,11 +288,13 @@ func _build_gallery() -> void:
 		{"name":"Window", "position":Vector2(840,520), "radius":105.0}
 	]
 	s01_interactables = [
-		# Each sits under its wall exhibit; hint_y puts "E 观察" just below the title card.
-		{"name":"EntrancePhoto", "position":Vector2(170,440), "radius":70.0, "hint_y":376.0},
-		{"name":"FirstExhibit", "position":Vector2(390,440), "radius":70.0, "hint_y":376.0},
-		{"name":"SecondExhibit", "position":Vector2(608,440), "radius":70.0, "hint_y":376.0},
-		{"name":"ExitSign", "position":Vector2(955,440), "radius":50.0, "hint_y":376.0}
+		# Each sits under its wall exhibit; hint_y puts the E hint just below the title card.
+		{"name":"EntrancePhoto", "position":Vector2(180,440), "radius":55.0, "hint_y":376.0},
+		{"name":"CommunityMap", "position":Vector2(310,440), "radius":45.0, "hint_y":376.0},
+		{"name":"ClockBack", "position":Vector2(470,440), "radius":40.0, "hint_y":376.0},
+		{"name":"ClockForward", "position":Vector2(585,440), "radius":40.0, "hint_y":376.0},
+		{"name":"ExitDoor", "position":Vector2(720,440), "radius":45.0, "hint_y":376.0},
+		{"name":"NotAnEye", "position":Vector2(910,440), "radius":55.0, "hint_y":376.0}
 	]
 	s02_interactables = [
 		# Left to right: 《镜中镜》, 《光》, guard, 《机械维纳斯》, then the dead-end mirror.
@@ -389,36 +417,167 @@ func _draw_gallery(room: Node2D) -> void:
 		_draw_object(window_node, "Window", Color("#5ca8c7"), "《窗》")
 
 func _draw_s01_gallery() -> void:
-	# S01 only exposes the entrance and first viewing area. Later Slice objects stay hidden.
-	# Exhibits hang on the wall at eye level; each one's E spot is the floor right below it.
-	draw_string(ThemeDB.fallback_font, Vector2(116, 175), "入口大厅", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color("#b8c7d4"))
-	draw_string(ThemeDB.fallback_font, Vector2(340, 175), "第一展厅", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color("#b8c7d4"))
-	# The old bar photograph is the visual anchor for how the player arrived.
-	draw_rect(Rect2(114, 240, 112, 84), Color("#c9ae78"), true)
-	draw_rect(Rect2(123, 249, 94, 66), Color("#667989"), true)
-	draw_rect(Rect2(131, 258, 78, 48), Color("#8ca0a8"), true)
-	draw_line(Vector2(138, 295), Vector2(201, 267), Color("#d5c38e"), 4.0)
-	draw_string(ThemeDB.fallback_font, Vector2(146, 352), "旧照片", HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color("#e8dfc8"))
-	# A quiet placeholder exhibit establishes that this is a gallery, not a menu room.
-	draw_rect(Rect2(332, 214, 116, 116), Color("#c7a56f"), true)
-	draw_rect(Rect2(342, 224, 96, 96), Color("#777f78"), true)
-	draw_circle(Vector2(390, 264), 18.0, Color("#c9bda1"))
-	draw_line(Vector2(363, 296), Vector2(433, 245), Color("#4f5d60"), 8.0)
-	draw_string(ThemeDB.fallback_font, Vector2(337, 352), "《观看的永恒》", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color("#e8dfc8"))
-	draw_rect(Rect2(552, 214, 112, 116), Color("#c7a56f"), true)
-	draw_rect(Rect2(562, 224, 92, 96), Color("#777f78"), true)
-	draw_circle(Vector2(608, 262), 19.0, Color("#c9bda1"))
-	draw_string(ThemeDB.fallback_font, Vector2(546, 352), "《这不是一只眼睛》", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#e8dfc8"))
-	# The exit door stands at the far end of the hall; it opens once the entrance has been read.
-	draw_string(ThemeDB.fallback_font, Vector2(944, 212), "出口 →", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color("#d9d4b6"))
-	draw_rect(Rect2(938, 222, 84, 150), Color("#445866"), true)
-	if not s01_gate_open:
-		draw_rect(Rect2(947, 231, 66, 141), Color("#1c2934"), true)
-		draw_circle(Vector2(1003, 305), 4.0, Color("#d9c997"))
+	# The entrance hall is the warm, old end of the gallery (plan B: warm and worn at the
+	# entrance, colder and emptier deeper in). Ceiling lights, a runner carpet.
+	draw_rect(Rect2(84, 140, 936, 232), Color(0.32, 0.24, 0.16, 0.55), true)
+	draw_rect(Rect2(84, 372, 936, 136), Color(0.26, 0.19, 0.13, 0.6), true)
+	draw_rect(Rect2(120, 404, 880, 66), Color("#5e2a26"), true)
+	draw_rect(Rect2(126, 409, 868, 56), Color("#c19a5b"), false, 2.0)
+	for x in [180.0, 310.0, 525.0, 910.0]:
+		draw_rect(Rect2(x - 10.0, 142, 20, 7), Color("#b9a27a"), true)
+		draw_colored_polygon(PackedVector2Array([Vector2(x - 6.0, 149), Vector2(x + 6.0, 149), Vector2(x + 70.0, 330), Vector2(x - 70.0, 330)]), Color(1.0, 0.86, 0.6, 0.05))
+	draw_string(ThemeDB.fallback_font, Vector2(116, 175), "入口大厅", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color("#d8c7a8"))
+	_draw_s01_photo()
+	_draw_s01_map()
+	_draw_s01_clocks()
+	_draw_s01_door()
+	_draw_s01_not_an_eye()
+	draw_string(ThemeDB.fallback_font, Vector2(112, 492), "入口", HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color("#a8957a"))
+
+func _draw_s01_figure(at: Vector2, body: Color, scale_factor: float = 1.0) -> void:
+	draw_circle(at, 3.2 * scale_factor, Color("#d9c3a5"))
+	draw_rect(Rect2(at.x - 3.5 * scale_factor, at.y + 3.0 * scale_factor, 7.0 * scale_factor, 11.0 * scale_factor), body, true)
+
+func _draw_s01_photo() -> void:
+	var r := S01_PHOTO_RECT
+	draw_rect(r, Color("#c9ae78"), true)
+	var inner := r.grow(-8.0)
+	var tone: Color = [Color("#8a7350"), Color("#a9bac4"), Color("#5f6466")][s01_era]
+	draw_rect(inner, tone, true)
+	# The photographed hall is this hall: the same door, the same hook.
+	var door := Rect2(inner.position + Vector2(52, 28), Vector2(20, 34))
+	draw_rect(door, Color("#7a4a30") if s01_era == 2 else Color("#2c3640"), true)
+	var hook := door.position + Vector2(10, -6)
+	draw_line(hook, hook + Vector2(0, 3), Color("#2a2a2a"), 1.5)
+	var floor_y := inner.end.y - 10.0
+	draw_line(Vector2(inner.position.x, floor_y + 4.0), Vector2(inner.end.x, floor_y + 4.0), tone.darkened(0.3), 1.0)
+	if s01_era == 0:
+		# Opening day: the guard hangs the keys by the door; the restorer and the visitor are in the crowd.
+		draw_circle(hook + Vector2(0, 5), 2.2, Color("#f0cf6a"))
+		_draw_s01_figure(Vector2(door.end.x + 9.0, floor_y - 14.0), Color("#566b7a"))
+		_draw_s01_figure(Vector2(inner.position.x + 14.0, floor_y - 14.0), Color("#b26b5e"))
+		_draw_s01_figure(Vector2(inner.position.x + 30.0, floor_y - 14.0), Color("#6c8290"))
+		for i in range(3):
+			_draw_s01_figure(Vector2(inner.end.x - 28.0 + i * 9.0, floor_y - 13.0), Color("#7a6a5a"), 0.9)
+		draw_string(ThemeDB.fallback_font, inner.position + Vector2(4, 12), "OPENING", HORIZONTAL_ALIGNMENT_LEFT, -1, 9, Color(1, 0.95, 0.8, 0.8))
+	elif s01_era == 1:
+		# Winter: snow outside a high window, coats, and someone up a ladder fixing the ceiling light.
+		var win := Rect2(inner.position + Vector2(8, 8), Vector2(22, 16))
+		draw_rect(win, Color("#dfe9ef"), true)
+		for i in range(6):
+			draw_circle(win.position + Vector2(3 + (i * 7) % 20, 3 + (i * 5) % 13), 1.2, Color.WHITE)
+		var ladder_x := inner.end.x - 22.0
+		draw_line(Vector2(ladder_x, floor_y + 3.0), Vector2(ladder_x + 6.0, inner.position.y + 20.0), Color("#5b4a3a"), 1.5)
+		draw_line(Vector2(ladder_x + 10.0, floor_y + 3.0), Vector2(ladder_x + 12.0, inner.position.y + 20.0), Color("#5b4a3a"), 1.5)
+		draw_rect(Rect2(ladder_x + 2.0, inner.position.y + 4.0, 12, 4), Color("#f4e7b8"), true)
+		_draw_s01_figure(Vector2(ladder_x + 8.0, inner.position.y + 14.0), Color("#4b79a8"), 0.9)
+		_draw_s01_figure(Vector2(inner.position.x + 20.0, floor_y - 14.0), Color("#3b3f46"))
 	else:
-		draw_rect(Rect2(947, 231, 66, 141), Color("#0e1620"), true)
-		draw_colored_polygon(PackedVector2Array([Vector2(947, 372), Vector2(1013, 372), Vector2(1030, 420), Vector2(930, 420)]), Color(0.75, 0.85, 0.95, 0.10))
-	draw_string(ThemeDB.fallback_font, Vector2(112, 480), "入口", HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color("#8fa1af"))
+		# Many years later: nobody, dust, a cobweb in the corner.
+		for i in range(14):
+			draw_circle(inner.position + Vector2((i * 37) % int(inner.size.x), (i * 23) % int(inner.size.y)), 0.9, Color(1, 1, 1, 0.35))
+		draw_line(inner.position, inner.position + Vector2(16, 0), Color(1, 1, 1, 0.3), 1.0)
+		draw_line(inner.position, inner.position + Vector2(0, 14), Color(1, 1, 1, 0.3), 1.0)
+		draw_line(inner.position, inner.position + Vector2(12, 10), Color(1, 1, 1, 0.3), 1.0)
+	draw_string(ThemeDB.fallback_font, Vector2(r.position.x + 2, 340), "《美术馆开幕日》", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#e8dfc8"))
+
+func _draw_s01_map() -> void:
+	var r := S01_MAP_RECT
+	draw_rect(r, Color("#8a6f4a"), true)
+	draw_rect(r.grow(-4.0), Color("#d8cfb5"), true)
+	# The Truth Community seen from above, shaped like a brain; "you are here" at the back of the head.
+	var c := r.get_center() + Vector2(0, 2)
+	var pts := PackedVector2Array()
+	for i in range(28):
+		var a := TAU * i / 28.0
+		var rr := 30.0 + 3.0 * sin(a * 5.0)
+		pts.append(c + Vector2(cos(a) * rr, sin(a) * rr * 0.72))
+	pts.append(pts[0])
+	draw_polyline(pts, Color("#6b5a44"), 1.5)
+	draw_line(c + Vector2(-4, -20), c + Vector2(2, 18), Color("#6b5a44"), 1.0)
+	draw_arc(c + Vector2(-12, -2), 8.0, 0.5, 2.6, 8, Color("#6b5a44"), 1.0)
+	draw_arc(c + Vector2(12, 4), 8.0, 3.6, 5.8, 8, Color("#6b5a44"), 1.0)
+	draw_circle(c + Vector2(26, 6), 3.0, Color("#c4372f"))
+	draw_string(ThemeDB.fallback_font, Vector2(r.position.x + 2, 340), "导览图", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#e8dfc8"))
+
+func _draw_s01_clock_eye(center: Vector2, turns: int, melt: int) -> void:
+	if melt >= 3:
+		# The right eye is gone: an empty, dark socket and a long dried trail.
+		draw_circle(center, 15.0, Color("#3d4441"))
+		return
+	# Every eye in this painting is already sagging; the right one gets worse each turn past the last era.
+	var drip := 26.0 + melt * 22.0
+	draw_colored_polygon(PackedVector2Array([center + Vector2(-13, 4), center + Vector2(13, 4), center + Vector2(4, drip), center + Vector2(0, drip + 5.0), center + Vector2(-4, drip)]), Color("#ece6d6"))
+	draw_circle(center, 15.0, Color("#ece6d6"))
+	draw_arc(center, 15.0, 0.0, TAU, 24, Color("#8f8a7c"), 1.0)
+	# The pupil is a clock: two hands.
+	var a := -PI / 2.0 + turns * 0.9
+	draw_line(center, center + Vector2(cos(a), sin(a)) * 11.0, Color("#2b2b2b"), 2.0)
+	draw_line(center, center + Vector2(cos(a * 3.0), sin(a * 3.0)) * 7.0, Color("#2b2b2b"), 2.5)
+	draw_circle(center, 2.0, Color("#2b2b2b"))
+
+func _draw_s01_clocks() -> void:
+	var r := S01_CLOCKS_RECT
+	draw_rect(r, Color("#c7a56f"), true)
+	var inner := r.grow(-8.0)
+	draw_rect(inner, Color("#7d8776"), true)
+	draw_rect(Rect2(inner.position.x, inner.end.y - 26.0, inner.size.x, 26.0), Color("#a48d68"), true)
+	draw_line(Vector2(inner.position.x + 60, inner.end.y - 26), Vector2(inner.position.x + 120, inner.position.y + 30), Color("#4f5d60"), 5.0)
+	_draw_s01_clock_eye(S01_CLOCK_BACK, -(1 - s01_era) if s01_era <= 1 else 0, 0)
+	_draw_s01_clock_eye(S01_CLOCK_FORWARD, s01_era + s01_melt, s01_melt)
+	if s01_melt >= 1:
+		# It runs out of the frame and down the wall.
+		var top := Vector2(S01_CLOCK_FORWARD.x, r.end.y)
+		var bottom := Vector2(S01_CLOCK_FORWARD.x + 2.0, minf(r.end.y + 30.0 * s01_melt, 378.0))
+		draw_line(top, bottom, Color("#ece6d6"), 4.0)
+	if s01_melt >= 2:
+		draw_set_transform(Vector2(S01_CLOCK_FORWARD.x + 4.0, 384), 0.0, Vector2(1.0, 0.32))
+		draw_circle(Vector2.ZERO, 14.0 + s01_melt * 7.0, Color("#e2dccb"))
+		draw_set_transform(Vector2.ZERO)
+	draw_string(ThemeDB.fallback_font, Vector2(r.position.x + 44, 318), "《观看的永恒》", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color("#e8dfc8"))
+
+func _draw_s01_door() -> void:
+	var r := S01_DOOR_RECT
+	draw_rect(r, Color("#445866"), true)
+	var inner := r.grow_individual(-8, -8, -8, 0)
+	if s01_gate_open:
+		draw_rect(inner, Color("#0e1620"), true)
+		draw_colored_polygon(PackedVector2Array([inner.position + Vector2(0, inner.size.y), inner.end, inner.end + Vector2(18, 40), Vector2(inner.position.x - 18.0, inner.end.y + 40.0)]), Color(0.75, 0.85, 0.95, 0.10))
+	else:
+		draw_rect(inner, Color("#1c2934"), true)
+		draw_circle(Vector2(inner.end.x - 8.0, inner.get_center().y + 6.0), 3.5, Color("#d9c997"))
+	if s01_melt >= 2:
+		for i in range(5 + s01_melt * 3):
+			var p := inner.position + Vector2(fmod(i * 23.0, inner.size.x), fmod(i * 31.0, inner.size.y))
+			draw_circle(p, 3.0 + (i % 3), Color(0.55, 0.3, 0.16, 0.85))
+	draw_string(ThemeDB.fallback_font, Vector2(r.position.x + 26, r.position.y + 20), "出口", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color("#d9d4b6"))
+	# The hook sits between the two eyes, where a nose would be.
+	draw_line(S01_HOOK + Vector2(-5, -4), S01_HOOK + Vector2(5, -4), Color("#8d7b5c"), 2.0)
+	draw_arc(S01_HOOK + Vector2(0, 2), 4.0, 0.0, PI, 8, Color("#b59f73"), 2.0)
+	if s01_key_on_hook and not s01_gate_open:
+		draw_circle(S01_HOOK + Vector2(0, 9), 4.0, Color("#f0cf6a"))
+		draw_line(S01_HOOK + Vector2(0, 12), S01_HOOK + Vector2(0, 22), Color("#f0cf6a"), 2.5)
+		draw_line(S01_HOOK + Vector2(0, 20), S01_HOOK + Vector2(4, 20), Color("#f0cf6a"), 2.0)
+
+func _draw_s01_not_an_eye() -> void:
+	var r := S01_EYE_RECT
+	draw_rect(r, Color("#c7a56f"), true)
+	draw_rect(r.grow(-8.0), Color("#777f78"), true)
+	var c := S01_EYE_CENTER
+	if s01_eyelid_closed:
+		draw_line(c + Vector2(-34, 0), c + Vector2(34, 0), Color("#2b2b2b"), 2.0)
+		draw_arc(c + Vector2(0, -30), 45.0, 0.75, PI - 0.75, 16, Color("#cdb99c"), 3.0)
+	else:
+		draw_set_transform(c, 0.0, Vector2(1.0, 0.55))
+		draw_circle(Vector2.ZERO, 34.0, Color("#ece6d6"))
+		draw_set_transform(Vector2.ZERO)
+		# It follows Graham; when she is stuck it looks at what she has missed.
+		var to := s01_eye_look - c
+		var pupil := c + to.normalized() * minf(to.length() * 0.06, 13.0) * Vector2(1.0, 0.55) if to.length() > 0.1 else c
+		draw_circle(pupil, 10.0, Color("#55718a"))
+		draw_circle(pupil, 4.5, Color("#151a1f"))
+	draw_string(ThemeDB.fallback_font, Vector2(r.position.x + 22, r.end.y - 14), "这不是一只眼睛", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("#e8e2d0"))
+	draw_string(ThemeDB.fallback_font, Vector2(r.position.x - 6, 318), "《这不是一只眼睛》", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#e8dfc8"))
 
 func _draw_s02_gallery() -> void:
 	# One continuous hall, left to right: entrance, 《镜中镜》, 《光》, guard, 《机械维纳斯》, dead-end mirror.
@@ -959,53 +1118,158 @@ func _try_interact() -> void:
 		_show_dialogue("这里没有可以调查的东西。")
 
 func _try_s01_interact() -> void:
-	if not s01_active or scene_state != "gallery" or transition_started:
+	if not s01_active or scene_state != "gallery" or transition_started or s01_eyelid_closed:
 		return
 	var nearest := _get_nearest_s01_interactable()
 	if nearest.is_empty():
 		return
+	s01_idle_time = 0.0
 	var object_name: String = nearest.get("name", "")
 	if object_name == "EntrancePhoto":
 		chapter_state.mark_event(&"s01_photo_observed")
-		_show_dialogue("《美术馆开幕日》。\n这张照片里的大厅，和这里一模一样。我们就是从照片里进来的。")
-	elif object_name == "FirstExhibit":
-		chapter_state.mark_event(&"s01_first_exhibit_observed")
-		_show_dialogue("《观看的永恒》：融化的不是时钟，而是眼球。\n说明牌写着：时间在此失去意义。")
-	elif object_name == "SecondExhibit":
-		chapter_state.mark_event(&"s01_second_exhibit_observed")
-		_show_dialogue("《这不是一只眼睛》：画面是一只眼睛，说明牌却说“这不是一只眼睛”。")
-	elif object_name == "ExitSign":
-		chapter_state.mark_event(&"s01_exit_area_observed")
-		var unread := _s01_unread_exhibits()
-		if unread.is_empty():
-			_show_dialogue("出口指向展厅深处。\n格雷汉：这扇门现在打不开。")
+		_show_dialogue(_s01_photo_text())
+	elif object_name == "CommunityMap":
+		chapter_state.mark_event(&"s01_map_observed")
+		_show_dialogue("真理社区导览图。整个社区的轮廓……像一颗大脑。\n“你在这里”的红点，在后脑勺的位置。")
+	elif object_name == "ClockBack" or object_name == "ClockForward":
+		_s01_turn_clock(object_name == "ClockForward")
+	elif object_name == "ExitDoor":
+		_s01_use_door()
+	elif object_name == "NotAnEye":
+		_s01_look_at_eye()
+
+func _s01_photo_text() -> String:
+	if s01_era == 0:
+		return "照片回到了真正的开幕日。人很多。\n一位保安正把一串钥匙挂到门边的钩子上。人群里还有一位拿着画笔的修复师，和一位一直盯着画看的参观者。"
+	if s01_era == 1:
+		var first := "" if chapter_state.has_story_event(&"s01_saw_self_in_photo") else "\n梯子上修顶灯的那个人……是我？那年冬天，我在这里修过灯。"
+		chapter_state.mark_story_event(&"s01_saw_self_in_photo")
+		return "《美术馆开幕日》。照片里的大厅，和这里一模一样。我们就是从照片里进来的。\n……可照片里在下雪。" + first
+	return "多年以后。照片里的大厅空了，到处是灰。\n门边的钩子上什么也没有。"
+
+func _s01_turn_clock(forward: bool) -> void:
+	if not s01_clocks_seen:
+		s01_clocks_seen = true
+		chapter_state.mark_event(&"s01_clocks_observed")
+		_show_dialogue("《观看的永恒》：融化的不是时钟，而是眼球。两只眼球的瞳孔，都是钟表的指针。\n说明牌写着：时间在此失去意义。（指针好像拨得动。）")
+		return
+	if not forward:
+		if s01_era == 0:
+			_show_dialogue("左边那只眼睛的指针拨不动了。\n再往前，这里还不存在。")
+			return
+		s01_era -= 1
+		var text := "左边那只眼睛里，指针往回走了一格。\n旧照片里的光变了。"
+		if s01_melt > 0:
+			text += "\n可右边那只眼睛……倒不回去了。"
+		_show_dialogue(text)
+	else:
+		if s01_era < 2:
+			s01_era += 1
+			_show_dialogue("右边那只眼睛里，指针往前走了一格。\n旧照片里的光变了。")
 		else:
-			# Say which ones are left, so the closed door never reads as a dead end.
-			_show_dialogue("门打不开。还没看：" + "、".join(unread) + "。\nBlue Lake：先把这里的画看完。")
-	if object_name != "ExitSign" and _s01_unread_exhibits().is_empty() and not chapter_state.has_event(&"s01_exit_area_observed"):
-		_show_dialogue(dialogue_label.text + "\nBlue Lake：画都看过了。去出口那边看看。")
-	_try_complete_s01()
+			s01_melt += 1
+			chapter_state.mark_event(StringName("s01_melt_%d" % s01_melt))
+			if s01_melt == 1:
+				_show_dialogue("指针转不动了，可你还在拨。\n右边的眼球开始往下淌。")
+			elif s01_melt == 2:
+				_show_dialogue("眼球滴到了地上。\n门上的铁件，生出了锈。")
+			else:
+				_show_dialogue("眼球化成了地上的一滩。\n门……锈穿了。")
+				_complete_s01("future")
+	s01_key_on_hook = s01_era == 0 and not s01_gate_open
+	if s01_key_on_hook:
+		chapter_state.mark_event(&"s01_key_appeared")
+	queue_redraw()
 
-## The entrance exhibits that must be read before the S01 door opens.
-func _s01_unread_exhibits() -> PackedStringArray:
-	var unread := PackedStringArray()
+func _s01_use_door() -> void:
+	chapter_state.mark_event(&"s01_exit_area_observed")
+	if s01_gate_open:
+		_enter_s02_after_s01()
+		return
+	if s01_key_on_hook:
+		_complete_s01("past")
+		return
+	if s01_melt >= 1:
+		_show_dialogue("门还锁着。门上的锈越来越多了。")
+	elif chapter_state.has_story_event(&"s01_door_tried"):
+		_show_dialogue("门锁着。门边的钩子是空的。\nBlue Lake：照片里的大厅和这里一模一样……照片里的钥匙呢？")
+	else:
+		chapter_state.mark_story_event(&"s01_door_tried")
+		_show_dialogue("出口。门锁着。\n门边有一个空钩子。格雷汉：钥匙本该挂在这里。")
+
+func _s01_look_at_eye() -> void:
+	s01_eye_visits += 1
+	chapter_state.mark_event(&"s01_second_exhibit_observed")
+	if s01_eye_visits == 1:
+		_show_dialogue("《这不是一只眼睛》：画面是一只眼睛，说明牌却说“这不是一只眼睛”。\n……它在看我。")
+	elif s01_eye_visits == 2:
+		_show_dialogue("它的目光" + ("跟着你走。" if s01_idle_time < S01_HINT_AFTER else "落在别处。") + "\n画框的边上，好像能摸到一片薄薄的眼皮。")
+	else:
+		s01_eye_visits = 1
+		_s01_close_eyelid()
+
+## Easter egg: pull the eyelid shut and the whole gallery goes dark; only the clock-eyes tick.
+func _s01_close_eyelid() -> void:
+	s01_eyelid_closed = true
+	player.input_locked = true
+	chapter_state.mark_story_event(&"s01_easter_eyelid")
+	if not is_instance_valid(s01_dark_overlay):
+		s01_dark_overlay = ColorRect.new()
+		s01_dark_overlay.color = Color(0.0, 0.0, 0.0, 1.0)
+		s01_dark_overlay.size = Vector2(1152, 648)
+		s01_dark_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var layer := dialogue_label.get_parent()
+		layer.add_child(s01_dark_overlay)
+		layer.move_child(s01_dark_overlay, dialogue_label.get_index())
+	s01_dark_overlay.modulate.a = 0.0
+	var tween := create_tween()
+	tween.tween_property(s01_dark_overlay, "modulate:a", 0.97, 0.6)
+	_show_dialogue("（你伸手，把它的眼皮拉了下来。）\n……滴答。")
+	await get_tree().create_timer(1.6).timeout
+	_show_dialogue("……滴答。……滴答。\n整座美术馆都闭上了眼睛。")
+	await get_tree().create_timer(1.8).timeout
+	var back := create_tween()
+	back.tween_property(s01_dark_overlay, "modulate:a", 0.0, 0.7)
+	await back.finished
+	s01_eyelid_closed = false
+	player.input_locked = false
+	_show_dialogue("它又睁开了，像什么都没发生过。")
+
+func _update_s01(delta: float) -> void:
+	if not s01_active or not player or scene_state != "gallery":
+		return
+	s01_idle_time += delta
+	var target := player.position
+	if s01_idle_time >= S01_HINT_AFTER and not s01_completion_started:
+		target = _s01_hint_target()
+	s01_eye_look = s01_eye_look.lerp(target, minf(1.0, delta * 3.0))
+	# Step back to the far left and the wall reads as a face.
+	if not s01_face_noticed and player.position.x <= 250.0 and s01_clocks_seen and s01_eye_visits > 0 and chapter_state.has_event(&"s01_exit_area_observed"):
+		s01_face_noticed = true
+		chapter_state.mark_story_event(&"s01_face_noticed")
+		_show_dialogue("Blue Lake：退远一点看——那两幅画是一双眼睛，钩子是鼻子，门是嘴。\n这面墙在看我们。")
+
+## Where 《这不是一只眼睛》 looks when Graham is stuck.
+func _s01_hint_target() -> Vector2:
+	if s01_key_on_hook:
+		return S01_HOOK
 	if not chapter_state.has_event(&"s01_photo_observed"):
-		unread.append("旧照片")
-	if not chapter_state.has_event(&"s01_first_exhibit_observed"):
-		unread.append("《观看的永恒》")
-	if not chapter_state.has_event(&"s01_second_exhibit_observed"):
-		unread.append("《这不是一只眼睛》")
-	return unread
+		return S01_PHOTO_RECT.get_center()
+	if not s01_clocks_seen:
+		return S01_CLOCKS_RECT.get_center()
+	if s01_melt > 0:
+		return S01_DOOR_RECT.get_center()
+	return S01_CLOCK_BACK if s01_era > 0 else S01_PHOTO_RECT.get_center()
 
-func _try_complete_s01() -> void:
+## The door opens one of two ways: the opening-day key (past) or rusted through (future).
+func _complete_s01(route: String) -> void:
 	if s01_completion_started:
 		return
-	if not _s01_unread_exhibits().is_empty():
-		return
-	if not chapter_state.has_event(&"s01_exit_area_observed"):
-		return
 	s01_completion_started = true
+	s01_exit_route = route
+	s01_key_on_hook = false
 	chapter_state.mark_event(&"s01_no_obvious_exit_recognized")
+	chapter_state.mark_event(StringName("s01_exit_by_" + route))
 	chapter_state.learn(&"s01_need_to_leave")
 	chapter_state.set_player_goal(&"find_a_way_out")
 	chapter_state.complete_slice(ChapterState.Slice.S01_ENTER)
@@ -1013,7 +1277,10 @@ func _try_complete_s01() -> void:
 	if is_instance_valid(gate_body):
 		gate_body.collision_layer = 0
 		gate_body.collision_mask = 0
-	_show_dialogue("这里没有一个正常的出口。\n我要继续往里面走。")
+	if route == "past":
+		_show_dialogue("格雷汉从钩子上取下钥匙，插进锁孔。门开了。\n这里没有一个正常的出口。我要继续往里面走。")
+	else:
+		_show_dialogue("眼球化成了地上的一滩。门锁锈穿了，一推就开。\n格雷汉：时间在这里真的没有意义。……我要继续往里面走。")
 	objective_label.text = "我要出去。"
 	_update_ui()
 	queue_redraw()
@@ -1695,9 +1962,6 @@ func _try_complete_s02() -> void:
 func _update_route_transitions() -> void:
 	if not player or scene_state != "gallery":
 		return
-	if s01_active and s01_completion_started and player.position.x >= 1012.0:
-		_enter_s02_after_s01()
-		return
 	# S07: the chalk doors join the 《窗》 room (right wall) and the hall (left wall).
 	if s07_active:
 		if s07_room == "gallery" and player.position.x >= 1000.0:
@@ -1992,6 +2256,16 @@ func _update_interaction_hint() -> void:
 		interaction_hint_label.hide()
 		return
 	interaction_hint_label.text = "E 观察"
+	if s01_active:
+		var n: String = nearest.get("name", "")
+		if s01_clocks_seen and n == "ClockBack":
+			interaction_hint_label.text = "E 往回拨"
+		elif s01_clocks_seen and n == "ClockForward":
+			interaction_hint_label.text = "E 往前拨"
+		elif n == "ExitDoor" and s01_gate_open:
+			interaction_hint_label.text = "E 进门"
+		elif n == "ExitDoor" and s01_key_on_hook:
+			interaction_hint_label.text = "E 取钥匙开门"
 	if s04_active and nearest.get("name", "") == "Restorer" and s04_restorer_observed and not s04_pigment_borrowed:
 		interaction_hint_label.text = "E 借荧光剂"
 	elif s04_active and nearest.get("name", "") == "PigmentStation":
