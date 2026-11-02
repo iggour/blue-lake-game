@@ -62,8 +62,31 @@ const S03_POV_LINES := [
 
 # Glass centre of the dead-end mirror at the far right of the S02/S03 hall.
 const S03_MIRROR_CENTER := Vector2(983, 286)
-# Wall spotlight aimed at 《窗》 in the S04 room; the Chalk marks it.
-const S04_LAMP_CENTER := Vector2(500, 300)
+# S04 "整间展厅是一只眼睛": 《窗》 is the pupil and the room's only light. Blue Lake (Space + Chalk)
+# draws its curtain through three preset windows, like a radiologist switching window width/level:
+#   cone = 全开: narrow window, high level — bright, saturated, everything holds still (the restorer's layer)
+#   mid  = 半掩: dusk — both layers at half; the only light in which peripheral vision and the restorer both work
+#   rod  = 全合: wide window, low level — flat grey, dim, and everything that moves shows (the visitors' layer)
+const S04_PRESETS := ["cone", "mid", "rod"]
+const S04_PRESET_T := {"cone": 0.0, "mid": 0.5, "rod": 1.0}
+const S04_PRESET_NAMES := {"cone": "全开 · 亮", "mid": "半掩 · 黄昏", "rod": "全合 · 暗"}
+const S04_PRESET_WL := {"cone": "窗宽 80 / 窗位 60", "mid": "窗宽 400 / 窗位 40", "rod": "窗宽 1500 / 窗位 -100"}
+const S04_STARRY_CENTER := Vector2(350, 265)
+# The signal in 《星空下的神经》, in the order it flows; Blue Lake traces it with the Chalk.
+const S04_SIGNAL_NODES := [Vector2(312, 300), Vector2(335, 250), Vector2(365, 285), Vector2(388, 232)]
+const S04_RESTORER_X := 455.0
+# The restorer faces 《星空下的神经》: she only sees what is right in front of her, here.
+const S04_RESTORER_FRONT := 410.0
+const S04_BENCH_X := 510.0
+const S04_GIRL_FRAME_X := 760.0
+const S04_GIRL_MIN_X := 290.0
+const S04_GIRL_MAX_X := 830.0
+const S04_GIRL_SPEED := 42.0
+const S04_GIRL_PAUSE := 2.5          # she lingers in front of the restorer each time she passes
+const S04_CATCH_RANGE := 30.0
+const S04_VISITOR_XS := [170.0, 945.0, 990.0]
+const S04_TWINS_X := 880.0
+const S04_LINE_TIME := 3.6
 # 《窗》 hangs on the wall here in S04 and S05 (same room, same painting).
 const S05_WINDOW_CENTER := Vector2(590, 285)
 # S06 central platform room: the empty 《看见》 plinth, 《凝视》's mechanical eye, and the back of 《窗》.
@@ -137,14 +160,30 @@ var s03_left_installed := false
 var s03_right_installed := false
 var s03_interactables: Array[Dictionary] = []
 var s04_active := false
-var s04_visitor_observed := false
-var s04_restorer_observed := false
-var s04_pigment_borrowed := false
-var s04_pigment_applied := false
-var s04_lamp_observed := false
-var s04_lights_off := false
-var s04_visitor_recognized := false
-var s04_visitor_moved := false
+var s04_lights_off := false          # only S07 (old revisit route, untouched) still sets this
+var s04_window := "cone"             # current preset of the curtain on 《窗》
+var s04_win_t := 0.0                 # 0 = cone .. 1 = rod, eased toward the preset
+var s04_window_seen := false
+var s04_restorer_met := false
+var s04_signal_progress := 0
+var s04_signal_traced := false
+var s04_starry_repaired := false
+var s04_has_riboflavin := false
+var s04_riboflavin_applied := false
+var s04_girl_out := false            # 《戴珍珠耳机的少女》 has stepped out of her frame
+var s04_girl_x := 760.0
+var s04_girl_dir := -1.0
+var s04_girl_pause := 0.0
+var s04_girl_paused_here := false
+var s04_girl_frozen := false         # caught by the bright window somewhere nobody was looking
+var s04_girl_caught := false         # frozen right in front of the restorer
+var s04_uv_on := false
+var s04_visitors_recognized := false
+var s04_handle_found := false
+var s04_frame_installed := false
+var s04_finish_pending := false
+var s04_lines: Array = []            # queued dialogue lines (advance by time or E)
+var s04_line_timer := 0.0
 var s04_interactables: Array[Dictionary] = []
 var s05_active := false
 var s05_window_observed := false
@@ -237,6 +276,7 @@ func _process(delta: float) -> void:
 	_update_s01(delta)
 	_update_s02(delta)
 	_update_s03(delta)
+	_update_s04(delta)
 	_update_route_transitions()
 	if s06_chase_active and s06_active and scene_state == "gallery" and player:
 		s06_guard_chase_x = move_toward(s06_guard_chase_x, player.position.x - 44.0, delta * 105.0)
@@ -385,19 +425,16 @@ func _build_gallery() -> void:
 	# S03 happens in the same 表与里 hall as S02, with the same pieces.
 	s03_interactables = s02_interactables.duplicate(true)
 	s04_interactables = [
-		# Graham enters from the right (she walked left through the S03 wall), so right to left:
-		# visitor, 《窗》, lamp, switch, restorer, pigment station beside the restorer.
-		{"name":"Visitor", "position":Vector2(740,440), "radius":45.0, "hint_y":258.0},
-		{"name":"BlockedWindow", "position":Vector2(590,440), "radius":45.0, "hint_y":376.0},
-		{"name":"Lamp", "position":Vector2(500,440), "radius":28.0, "hint_y":376.0},
-		{"name":"LightSwitch", "position":Vector2(440,440), "radius":25.0, "hint_y":376.0},
-		{"name":"PigmentStation", "position":Vector2(340,440), "radius":35.0, "hint_y":398.0},
-		{"name":"Restorer", "position":Vector2(255,440), "radius":40.0, "hint_y":258.0},
-		# Exhibits of this room: the restorer studies 《星空下的神经》; the visitor's side has
-		# the face that changes (《戴珍珠耳机的少女》) and the pair's own work (《双生》).
-		{"name":"StarryNerves", "position":Vector2(150,440), "radius":45.0, "hint_y":376.0},
-		{"name":"PearlHeadphones", "position":Vector2(870,440), "radius":40.0, "hint_y":376.0},
-		{"name":"SculptureTwins", "position":Vector2(950,440), "radius":28.0, "hint_y":398.0}
+		# Left to right. The restorer is reached only from right in front of her (between her and the painting).
+		{"name":"Visitor", "position":Vector2(170,440), "radius":40.0, "hint_y":258.0},
+		{"name":"StarryNerves", "position":Vector2(S04_STARRY_CENTER.x,440), "radius":38.0, "hint_y":376.0},
+		{"name":"Restorer", "position":Vector2(S04_RESTORER_FRONT,440), "radius":16.0, "hint_y":258.0},
+		{"name":"RestorerSide", "position":Vector2(S04_RESTORER_X + 7.0,440), "radius":14.0, "hint_y":258.0},
+		{"name":"Workbench", "position":Vector2(S04_BENCH_X,440), "radius":22.0, "hint_y":398.0},
+		{"name":"Window", "position":Vector2(590,440), "radius":30.0, "hint_y":376.0},
+		{"name":"PearlHeadphones", "position":Vector2(S04_GIRL_FRAME_X,440), "radius":40.0, "hint_y":376.0},
+		{"name":"SculptureTwins", "position":Vector2(S04_TWINS_X,440), "radius":28.0, "hint_y":398.0},
+		{"name":"VisitorGroup", "position":Vector2(968,440), "radius":45.0, "hint_y":258.0}
 	]
 	s05_interactables = [
 		{"name":"Window", "position":Vector2(590,440), "radius":60.0, "hint_y":376.0}
@@ -1212,84 +1249,226 @@ func _draw_legacy_hall() -> void:
 	draw_string(ThemeDB.fallback_font, Vector2(947, 392), "尽头的镜子", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#e8dfc8"))
 
 func _draw_s04_gallery() -> void:
-	# Right to left: arrival wall, visitor, 《窗》, lamp + switch, restorer, pigment station.
-	draw_string(ThemeDB.fallback_font, Vector2(640, 175), "画作展厅", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color("#b8c7d4"))
-	draw_string(ThemeDB.fallback_font, Vector2(200, 175), "修复区", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color("#b8c7d4"))
+	# Left to right: entrance door, a visitor in the dark edge, 《星空下的神经》, the restorer facing it,
+	# her workbench, 《窗》 (the pupil, the only light), 《戴珍珠耳机的少女》, 《双生》, more visitors.
+	var t := s04_win_t
+	var cone_a := _s04_cone_alpha()
+	var rod_a := _s04_rod_alpha()
+	var now := Time.get_ticks_msec() * 0.001
+	# The room: light pours from the middle; the edges stay dark (that is where the rods live).
+	draw_rect(Rect2(84, 140, 936, 368), Color(0.03, 0.05, 0.09, 0.12 + 0.42 * t), true)
+	draw_rect(Rect2(84, 140, 190, 368), Color(0.02, 0.03, 0.06, 0.30 * (1.0 - t)), true)
+	draw_rect(Rect2(840, 140, 180, 368), Color(0.02, 0.03, 0.06, 0.30 * (1.0 - t)), true)
+	draw_colored_polygon(PackedVector2Array([Vector2(548, 335), Vector2(632, 335), Vector2(720, 508), Vector2(460, 508)]), Color(1.0, 0.93, 0.72, 0.14 * (1.0 - t)))
+	draw_string(ThemeDB.fallback_font, Vector2(100, 175), "画作展厅", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, _s04_c(Color("#b8c7d4")))
 	# The door Graham came through is on the left wall. S07 still revisits by the old chalk door
 	# on the right wall until S07 is redesigned for the 表与里 hall.
 	if s07_active:
 		draw_rect(Rect2(998, 262, 22, 110), Color(0.75, 0.92, 1.0, 0.35), false, 2.0)
 	else:
-		draw_rect(Rect2(62, 262, 22, 110), Color("#4b2c1d"), true)
-	# 《窗》 hangs between the visitor and the restorer.
-	draw_rect(Rect2(540, 225, 100, 120), Color("#c7a56f"), true)
-	draw_rect(Rect2(549, 234, 82, 102), Color("#725e50"), true)
-	if s04_lights_off:
-		draw_rect(Rect2(555, 240, 70, 90), Color("#182633"), true)
-	else:
-		draw_circle(Vector2(590, 285), 20.0, Color("#d9b575"))
-		draw_line(Vector2(562, 318), Vector2(618, 252), Color("#b6a280"), 6.0)
+		draw_rect(Rect2(62, 262, 22, 110), _s04_c(Color("#4b2c1d")), true)
+	_draw_s04_window()
+	_draw_s04_starry(now)
+	_draw_s04_restorer(cone_a)
+	_draw_s04_bench()
+	_draw_s04_girl_painting(t)
+	_draw_s04_twins(cone_a, rod_a)
+	for i in range(S04_VISITOR_XS.size()):
+		_draw_s04_visitor(S04_VISITOR_XS[i], i, rod_a, now)
+	draw_string(ThemeDB.fallback_font, Vector2(150, 278), "参观者", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(0.85, 0.88, 0.92, maxf(rod_a, 0.35)))
+	draw_string(ThemeDB.fallback_font, Vector2(935, 278), "参观者们", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(0.85, 0.88, 0.92, maxf(rod_a, 0.35)))
+	if s04_girl_out:
+		_draw_s04_girl_walking(s04_girl_x, rod_a)
+	if s04_uv_on:
+		# Ultraviolet: the riboflavin she painted with glows yellow-green wherever she has been.
+		draw_rect(Rect2(84, 140, 936, 368), Color(0.42, 0.22, 0.9, 0.10), true)
+		if s04_girl_caught:
+			var x := S04_GIRL_MIN_X + 20.0
+			while x < S04_GIRL_MAX_X:
+				draw_circle(Vector2(x, 474), 3.0, Color(0.78, 1.0, 0.35, 0.55))
+				x += 46.0
+	if s04_active and player and s04_riboflavin_applied and s04_uv_on:
+		draw_circle(Vector2(player.position.x, player.position.y - 4.0), 27.0, Color(0.78, 1.0, 0.35, 0.28))
+		draw_arc(Vector2(player.position.x, player.position.y - 4.0), 27.0, 0.0, TAU, 28, Color(0.85, 1.0, 0.5, 0.75), 2.0)
+
+## Window/level, applied to a colour: cone keeps it saturated and bright; rod maps it through a
+## wide window at a low level (flat, dim, blue-grey). The room lerps between the two.
+func _s04_c(c: Color) -> Color:
+	var lum := c.r * 0.299 + c.g * 0.587 + c.b * 0.114
+	var sat := 1.35
+	var cone := Color(clampf((lum + (c.r - lum) * sat) * 1.08, 0.0, 1.0), clampf((lum + (c.g - lum) * sat) * 1.08, 0.0, 1.0), clampf((lum + (c.b - lum) * sat) * 1.08, 0.0, 1.0), c.a)
+	var level := 0.42
+	var width := 1.2
+	var g := clampf((lum - (level - width * 0.5)) / width, 0.0, 1.0)
+	var rod := Color(g * 0.46, g * 0.52, g * 0.60, c.a)
+	return cone.lerp(rod, s04_win_t)
+
+func _s04_cone_alpha() -> float:
+	return clampf(1.5 - 2.0 * s04_win_t, 0.0, 1.0)
+
+func _s04_rod_alpha() -> float:
+	return clampf(2.0 * s04_win_t - 0.5, 0.0, 1.0)
+
+func _draw_s04_window() -> void:
+	var w := S05_WINDOW_CENTER
+	var lit := 1.0 - s04_win_t
+	# The painting glows: it is the room's light source.
+	draw_circle(w, 70.0, Color(1.0, 0.92, 0.7, 0.10 + 0.10 * lit))
+	if s04_frame_installed:
+		draw_rect(Rect2(w.x - 53.0, w.y - 58.0, 106, 116), _s04_c(Color("#c7a56f")), false, 8.0)
+	# Bare canvas: the frame was taken off for restoration.
+	draw_rect(Rect2(w.x - 45.0, w.y - 50.0, 90, 100), Color(1.0, 0.9, 0.62).lerp(Color(0.55, 0.62, 0.72), s04_win_t * 0.6), true)
+	draw_line(Vector2(w.x, w.y - 50.0), Vector2(w.x, w.y + 50.0), _s04_c(Color("#8a6a4a")), 3.0)
+	draw_line(Vector2(w.x - 45.0, w.y - 5.0), Vector2(w.x + 45.0, w.y - 5.0), _s04_c(Color("#8a6a4a")), 3.0)
+	# The curtain: open at the sides (cone), half drawn (mid), closed (rod).
+	var cover: float = 0.14 + 0.86 * s04_win_t
+	var half: float = 45.0 * cover
+	var curtain := _s04_c(Color("#8a3b3b"))
+	draw_rect(Rect2(w.x - 45.0, w.y - 50.0, half, 100), curtain, true)
+	draw_rect(Rect2(w.x + 45.0 - half, w.y - 50.0, half, 100), curtain, true)
+	draw_line(Vector2(w.x - 47.0, w.y - 52.0), Vector2(w.x + 47.0, w.y - 52.0), _s04_c(Color("#5b4636")), 3.0)
+	if s04_handle_found:
+		draw_rect(Rect2(w.x + 30.0, w.y - 9.0, 6, 18), Color("#f6e5a7"), true)
+	elif s04_uv_on:
+		# The patch she painted over glows; the handle shows through as a dark shape.
+		draw_rect(Rect2(w.x + 24.0, w.y - 14.0, 18, 28), Color(0.78, 1.0, 0.35, 0.75), true)
+		draw_rect(Rect2(w.x + 30.0, w.y - 9.0, 6, 18), Color(0.2, 0.3, 0.15, 0.8), true)
+	if s04_uv_on and s04_girl_caught:
+		# A small handprint, pressed onto the glass.
+		draw_circle(w + Vector2(-18, 18), 6.0, Color(0.78, 1.0, 0.35, 0.6))
+		for k in range(4):
+			draw_line(w + Vector2(-23 + k * 3.5, 13), w + Vector2(-25 + k * 4.0, 5), Color(0.78, 1.0, 0.35, 0.6), 2.0)
 	if not (s05_active or s08_active):
-		# In S05/S08 the operable 《窗》 is drawn over this one with its own title.
 		draw_string(ThemeDB.fallback_font, Vector2(570, 362), "《窗》", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color("#e8dfc8"))
-	# The sensor lamp is a wall spotlight aimed at 《窗》; the switch sits beside it.
-	draw_rect(Rect2(490, 316, 20, 6), Color("#8796a2"), true)
-	draw_line(Vector2(500, 316), Vector2(500, 306), Color("#b8c7d4"), 3.0)
-	draw_circle(S04_LAMP_CENTER, 11.0, Color("#e5d9ae"))
-	if not s04_lights_off:
-		draw_colored_polygon(PackedVector2Array([Vector2(506, 294), Vector2(512, 306), Vector2(560, 300), Vector2(552, 250)]), Color(1.0, 0.95, 0.75, 0.12))
-	draw_string(ThemeDB.fallback_font, Vector2(479, 362), "感应灯", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color("#e8dfc8"))
-	draw_rect(Rect2(430, 296, 20, 30), Color("#5e6b73"), true)
-	draw_circle(Vector2(440, 306), 4.0, Color("#d1c49d"))
-	draw_string(ThemeDB.fallback_font, Vector2(427, 362), "灯控", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color("#b8c7d4"))
-	if blue_lake_active and not s04_lamp_observed:
-		var glow := 0.8 if chalk_hover_target == "Lamp" else 0.4
-		draw_circle(S04_LAMP_CENTER, 32.0, Color(0.45, 0.85, 1.0, 0.14))
-		draw_arc(S04_LAMP_CENTER, 32.0, 0.0, TAU, 24, Color(0.75, 0.91, 1.0, glow), 2.0)
-	# Visitor first: she studies 《窗》, then steps aside once she recognizes Graham.
-	var visitor_x := 772.0 if s04_visitor_moved else 708.0
-	draw_circle(Vector2(visitor_x, 322), 16.0, Color("#d3b28e"))
-	draw_rect(Rect2(visitor_x - 18.0, 338, 36, 60), Color("#6c8290"), true)
-	draw_circle(Vector2(visitor_x - 6.0, 319), 2.5, Color("#5a6670"))
-	draw_circle(Vector2(visitor_x + 6.0, 319), 2.5, Color("#5a6670"))
-	draw_string(ThemeDB.fallback_font, Vector2(visitor_x - 20.0, 290), "参观者", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color("#e8dfc8"))
-	# 《星空下的神经》: the painting the restorer keeps studying.
-	draw_rect(Rect2(100, 230, 100, 100), Color("#b49464"), true)
-	draw_rect(Rect2(108, 238, 84, 84), Color("#66747a"), true)
-	draw_arc(Vector2(150, 280), 26.0, 0.0, 5.2, 24, Color("#c8c1a8"), 3.0)
-	draw_arc(Vector2(150, 280), 13.0, 1.0, 6.0, 18, Color("#c8c1a8"), 2.0)
-	draw_string(ThemeDB.fallback_font, Vector2(105, 352), "《星空下的神经》", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#e8dfc8"))
-	# The restorer faces it, brush raised; the pigment station stands right beside her.
-	draw_circle(Vector2(255, 322), 16.0, Color("#cba98a"))
-	draw_rect(Rect2(237, 338, 36, 60), Color("#b26b5e"), true)
-	draw_rect(Rect2(243, 352, 24, 10), Color("#e3c77d"), true)
-	draw_line(Vector2(237, 350), Vector2(216, 330), Color("#bfe8ff"), 4.0)
-	draw_string(ThemeDB.fallback_font, Vector2(235, 290), "修复师", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color("#e8dfc8"))
-	draw_rect(Rect2(312, 340, 56, 32), Color("#665d50"), true)
-	draw_rect(Rect2(316, 332, 48, 10), Color("#c8b98d"), true)
-	draw_circle(Vector2(340, 324), 7.0, Color("#bfe8ff"))
-	draw_string(ThemeDB.fallback_font, Vector2(316, 392), "荧光剂台", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#e8dfc8"))
-	# 《戴珍珠耳机的少女》 and 《双生》 on the visitor's side of the room.
-	draw_rect(Rect2(825, 240, 90, 90), Color("#b49464"), true)
-	draw_rect(Rect2(832, 247, 76, 76), Color("#66747a"), true)
-	draw_circle(Vector2(870, 280), 14.0, Color("#c9bda1"))
-	draw_circle(Vector2(883, 282), 4.0, Color("#e8e2d0"))
-	draw_string(ThemeDB.fallback_font, Vector2(816, 352), "《戴珍珠耳机的少女》", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("#e8dfc8"))
-	draw_rect(Rect2(930, 326, 40, 46), Color("#4b5966"), true)
-	draw_circle(Vector2(942, 304), 12.0, Color("#b9aa8d"))
-	draw_circle(Vector2(958, 304), 12.0, Color("#b9aa8d"))
-	draw_string(ThemeDB.fallback_font, Vector2(932, 392), "《双生》", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#e8dfc8"))
-	if s04_visitor_observed and not s04_visitor_recognized:
-		draw_string(ThemeDB.fallback_font, Vector2(visitor_x - 42.0, 236), "她仍在寻找你。", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color("#d6e8f0"))
-	if s04_lights_off:
-		# Lights out: the room goes dark, only the fluorescent traces keep shining.
-		draw_rect(Rect2(84, 140, 936, 368), Color(0.02, 0.04, 0.08, 0.55), true)
-		draw_circle(Vector2(590, 285), 26.0, Color(0.52, 0.9, 0.98, 0.72))
-		draw_arc(Vector2(590, 285), 38.0, 0.0, TAU, 32, Color("#bfe8ff"), 3.0)
-	if s04_active and s04_pigment_applied:
-		draw_arc(Vector2(player.position.x, player.position.y - 4.0), 23.0, 0.0, TAU, 24, Color("#bfe8ff"), 2.0)
-	if s04_active and s04_visitor_moved:
-		draw_string(ThemeDB.fallback_font, Vector2(540, 205), "这幅画里有光。", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color("#bfe8ff"))
+	if s04_active and s04_window_seen:
+		draw_string(ThemeDB.fallback_font, Vector2(w.x - 62.0, 220), S04_PRESET_NAMES[s04_window] + "   " + S04_PRESET_WL[s04_window], HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#bfe8ff") if blue_lake_active else Color("#9fb0bf"))
+	if s04_active and blue_lake_active:
+		var glow := 0.85 if chalk_hover_target == "S04Window" else 0.4
+		draw_arc(w, 64.0, 0.0, TAU, 32, Color(0.75, 0.91, 1.0, glow), 2.0)
+
+## How clearly Graham can see the signal in 《星空下的神经》: it needs the rods (dusk or dark)
+## and it vanishes when she looks straight at it.
+func _s04_signal_alpha() -> float:
+	if s04_starry_repaired:
+		return 1.0
+	if not player:
+		return 0.0
+	var rods := clampf((s04_win_t - 0.25) / 0.25, 0.0, 1.0)
+	var aside := clampf((absf(player.position.x - S04_STARRY_CENTER.x) - 25.0) / 40.0, 0.0, 1.0)
+	return rods * aside
+
+func _draw_s04_starry(now: float) -> void:
+	var c := S04_STARRY_CENTER
+	draw_rect(Rect2(c.x - 50.0, c.y - 50.0, 100, 100), _s04_c(Color("#b49464")), true)
+	draw_rect(Rect2(c.x - 42.0, c.y - 42.0, 84, 84), _s04_c(Color("#2c3a5a")), true)
+	draw_arc(c, 26.0, 0.0, 5.2, 24, _s04_c(Color("#c8c1a8")), 3.0)
+	draw_arc(c, 13.0, 1.0, 6.0, 18, _s04_c(Color("#c8c1a8")), 2.0)
+	draw_circle(c + Vector2(-28, -26), 3.0, _s04_c(Color("#f2e2a0")))
+	draw_circle(c + Vector2(30, 24), 2.5, _s04_c(Color("#f2e2a0")))
+	draw_string(ThemeDB.fallback_font, Vector2(c.x - 45.0, 352), "《星空下的神经》", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#e8dfc8"))
+	var a := _s04_signal_alpha()
+	if a > 0.0:
+		var pts := PackedVector2Array(S04_SIGNAL_NODES)
+		draw_polyline(pts, Color(0.62, 0.92, 1.0, 0.35 * a), 2.0)
+		# A pulse runs along the fibre, always in the same direction.
+		var seg_count := pts.size() - 1
+		var f := fmod(now * 0.6, 1.0) * seg_count
+		var i := mini(int(f), seg_count - 1)
+		draw_circle(pts[i].lerp(pts[i + 1], f - i), 4.0, Color(0.75, 0.97, 1.0, 0.9 * a))
+		if blue_lake_active and not s04_signal_traced:
+			for k in range(pts.size()):
+				var hover := chalk_hover_target == "Signal%d" % k
+				draw_arc(pts[k], 8.0, 0.0, TAU, 16, Color(0.75, 0.91, 1.0, (0.9 if hover else 0.45) * a), 2.0)
+	for k in range(s04_signal_progress - 1):
+		draw_line(S04_SIGNAL_NODES[k], S04_SIGNAL_NODES[k + 1], Color("#dff5ff"), 3.0)
+	if s04_signal_progress >= 1:
+		draw_circle(S04_SIGNAL_NODES[0], 3.0, Color("#dff5ff"))
+
+func _draw_s04_restorer(cone_a: float) -> void:
+	# A cone: short, pointed hat, three colour bands (blue / green / red), a magnifier. She faces left.
+	var a := maxf(cone_a, 0.22)
+	var x := S04_RESTORER_X
+	draw_colored_polygon(PackedVector2Array([Vector2(x - 14, 312), Vector2(x + 14, 312), Vector2(x, 282)]), _s04_c(Color(0.85, 0.75, 0.55, a)))
+	draw_circle(Vector2(x, 322), 13.0, _s04_c(Color(0.8, 0.66, 0.54, a)))
+	draw_circle(Vector2(x - 6, 320), 2.2, Color(0.15, 0.15, 0.2, a))
+	draw_rect(Rect2(x - 16, 335, 32, 14), _s04_c(Color(0.25, 0.45, 0.85, a)), true)
+	draw_rect(Rect2(x - 16, 349, 32, 14), _s04_c(Color(0.3, 0.7, 0.4, a)), true)
+	draw_rect(Rect2(x - 16, 363, 32, 14), _s04_c(Color(0.85, 0.3, 0.3, a)), true)
+	draw_line(Vector2(x - 16, 345), Vector2(x - 34, 318), _s04_c(Color(0.75, 0.8, 0.85, a)), 3.0)
+	draw_arc(Vector2(x - 37, 313), 6.0, 0.0, TAU, 14, _s04_c(Color(0.75, 0.9, 1.0, a)), 2.0)
+	draw_string(ThemeDB.fallback_font, Vector2(x - 20, 276), "修复师", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(0.91, 0.87, 0.78, maxf(cone_a, 0.35)))
+
+func _draw_s04_bench() -> void:
+	var x := S04_BENCH_X
+	draw_rect(Rect2(x - 22, 344, 44, 28), _s04_c(Color("#665d50")), true)
+	draw_rect(Rect2(x - 26, 338, 52, 7), _s04_c(Color("#8a7a62")), true)
+	# Ultraviolet lamp: a violet tube on the bench.
+	draw_rect(Rect2(x - 14, 328, 28, 6), Color(0.6, 0.35, 1.0, 0.95) if s04_uv_on else _s04_c(Color("#5c5470")), true)
+	if s04_uv_on:
+		draw_circle(Vector2(x, 331), 18.0, Color(0.55, 0.3, 1.0, 0.25))
+	if s04_has_riboflavin and not s04_riboflavin_applied:
+		draw_rect(Rect2(x + 10, 326, 7, 12), _s04_c(Color("#e8c832")), true)
+	if not s04_frame_installed:
+		# The empty frame of 《窗》, leaning against the bench.
+		draw_rect(Rect2(x - 44, 312, 22, 60), _s04_c(Color("#c7a56f")), false, 4.0)
+	draw_string(ThemeDB.fallback_font, Vector2(x - 20, 392), "工作台", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#e8dfc8"))
+
+func _draw_s04_girl_painting(t: float) -> void:
+	var x := S04_GIRL_FRAME_X
+	draw_rect(Rect2(x - 45, 225, 90, 90), _s04_c(Color("#b49464")), true)
+	draw_rect(Rect2(x - 38, 232, 76, 76), _s04_c(Color("#20242c")), true)
+	if not s04_girl_out:
+		var dusk := clampf(1.0 - absf(t - 0.5) * 4.0, 0.0, 1.0)   # strongest at the dusk window
+		draw_rect(Rect2(x - 14, 280, 28, 28), _s04_c(Color("#d9b23a")), true)
+		draw_circle(Vector2(x, 266), 14.0, _s04_c(Color("#e2c3a3")))
+		draw_colored_polygon(PackedVector2Array([Vector2(x - 16, 262), Vector2(x - 6, 246), Vector2(x + 12, 250), Vector2(x + 4, 262)]), _s04_c(Color("#2f5fb8")))
+		# Purkinje shift: at dusk the red lips go dark and the blue earphone lights up; her eyes turn blue.
+		draw_circle(Vector2(x + 3, 274), 2.5, _s04_c(Color("#c0303a")).lerp(Color(0.12, 0.1, 0.12), dusk))
+		draw_circle(Vector2(x + 13, 268), 4.5, _s04_c(Color("#eeeadc")).lerp(Color(0.4, 0.75, 1.0), dusk))
+		var eye := _s04_c(Color("#3a2a20")).lerp(Color(0.25, 0.55, 1.0), dusk)
+		draw_circle(Vector2(x - 4, 264), 1.8, eye)
+		draw_circle(Vector2(x + 5, 264), 1.8, eye)
+		if s04_uv_on and s04_girl_caught:
+			draw_line(Vector2(x - 4, 267), Vector2(x - 5, 278), Color(0.78, 1.0, 0.35, 0.8), 1.5)
+			draw_line(Vector2(x + 5, 267), Vector2(x + 6, 278), Color(0.78, 1.0, 0.35, 0.8), 1.5)
+	draw_string(ThemeDB.fallback_font, Vector2(x - 44, 352), "《戴珍珠耳机的少女》", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("#e8dfc8"))
+
+func _draw_s04_girl_walking(x: float, rod_a: float) -> void:
+	# Out of her frame: a small grey shadow that moves (rod layer); when the bright window
+	# catches her she holds still, in full colour (cone layer).
+	var a := 1.0 if s04_girl_frozen else maxf(rod_a, 0.0)
+	if a <= 0.01:
+		return
+	var bob := 0.0 if s04_girl_frozen else sin(Time.get_ticks_msec() * 0.012) * 1.5
+	draw_rect(Rect2(x - 8, 442 + bob, 16, 26), _s04_c(Color(0.85, 0.7, 0.23, a)), true)
+	draw_circle(Vector2(x, 434 + bob), 8.0, _s04_c(Color(0.89, 0.76, 0.64, a)))
+	draw_colored_polygon(PackedVector2Array([Vector2(x - 9, 432 + bob), Vector2(x - 3, 423 + bob), Vector2(x + 7, 425 + bob), Vector2(x + 3, 432 + bob)]), _s04_c(Color(0.18, 0.37, 0.72, a)))
+	draw_circle(Vector2(x + 7, 436 + bob), 2.5, _s04_c(Color(0.93, 0.92, 0.86, a)))
+
+func _draw_s04_twins(cone_a: float, rod_a: float) -> void:
+	# 《双生》: two heads back to back. The restorer's half lives in the bright layer, the visitor's in the dark.
+	var x := S04_TWINS_X
+	draw_rect(Rect2(x - 20, 326, 40, 46), _s04_c(Color("#4b5966")), true)
+	draw_circle(Vector2(x - 10, 304), 12.0, Color(0.85, 0.62, 0.45, cone_a))
+	draw_arc(Vector2(x - 10, 304), 12.0, 0.0, TAU, 20, Color(0.25, 0.2, 0.15, cone_a), 2.0)
+	draw_circle(Vector2(x + 10, 304), 12.0, Color(0.55, 0.6, 0.68, rod_a))
+	if s04_uv_on:
+		draw_line(Vector2(x - 16, 362), Vector2(x - 4, 358), Color(0.78, 1.0, 0.35, 0.8), 1.5)
+		draw_line(Vector2(x + 4, 360), Vector2(x + 16, 364), Color(0.78, 1.0, 0.35, 0.8), 1.5)
+	draw_string(ThemeDB.fallback_font, Vector2(x - 18, 392), "《双生》", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#e8dfc8"))
+
+func _draw_s04_visitor(x: float, index: int, rod_a: float, now: float) -> void:
+	# A rod: tall, thin, a head like a stack of discs, grey-blue, face blurred. Only movement shows to them.
+	var a := maxf(rod_a, 0.28)
+	var sway := sin(now * 1.3 + index * 1.7) * 2.0 * rod_a
+	var look := 0.0
+	if player and rod_a > 0.5 and absf(player.velocity.x) > 30.0:
+		look = signf(player.position.x - x) * 3.0
+	var col := Color(0.49, 0.56, 0.64, a)
+	draw_rect(Rect2(x - 9 + sway, 318, 18, 82), col, true)
+	for k in range(4):
+		draw_rect(Rect2(x - 11 + sway + look * 0.5, 296 + k * 5.5, 22, 4), Color(0.6, 0.66, 0.74, a), true)
+	draw_circle(Vector2(x + sway + look, 310), 7.0, Color(0.7, 0.74, 0.8, a * 0.35))
 
 func _draw_s05_gallery() -> void:
 	# S05 is the first authored intervention: a painting becomes operable as a window.
@@ -1603,7 +1782,7 @@ func _finish_blue_lake_transformation() -> void:
 	if s03_active:
 		_show_dialogue("蓝湖：这就是我看到的。把粉笔移到维纳斯的眼睛上，点左键。")
 	elif s04_active:
-		_show_dialogue("Blue Lake：用荧光照一下那盏灯。")
+		_show_dialogue("Blue Lake：把粉笔移到《窗》上，点一下，拉窗帘。")
 	elif s05_active:
 		_show_dialogue("Blue Lake：现在，把粉笔移到《窗》上，点左键。")
 	elif s06_active:
@@ -1614,23 +1793,6 @@ func _finish_blue_lake_transformation() -> void:
 		_show_dialogue("Blue Lake：这次不一样。把粉笔移到《窗》上，点左键。")
 	else:
 		_show_dialogue("Blue Lake 已经变成粉笔。")
-	_update_ui()
-	queue_redraw()
-
-func _try_toggle_s04_blue_lake() -> void:
-	if not s04_pigment_applied:
-		_show_dialogue("Blue Lake：先向修复师借一点荧光剂。")
-		return
-	if not blue_lake_active and not blue_lake_transform_completed:
-		player.input_locked = true
-		_hide_space_prompt()
-		_show_dialogue("Blue Lake：让我看看那盏灯。")
-		blue_lake_transform.play()
-		return
-	blue_lake_active = not blue_lake_active
-	chalk_cursor.set_active(blue_lake_active)
-	visual_mode = "Chalk Interaction" if blue_lake_active else "Standard"
-	_show_dialogue("Blue Lake：" + ("把 Chalk Cursor 移到灯上，再点击。" if blue_lake_active else "……先收起来。"))
 	_update_ui()
 	queue_redraw()
 
@@ -2299,98 +2461,333 @@ func _update_s03(delta: float) -> void:
 			if not s03_ride_active:
 				_show_dialogue("暖光照在锈铁叶子上。叶子一片片落下，铁丝松开了。\n锈铁手臂露了出来。")
 
+func _try_toggle_s04_blue_lake() -> void:
+	if not s04_window_seen:
+		_show_dialogue("Blue Lake：先看看那幅会发光的画。")
+		return
+	if not blue_lake_active and not blue_lake_transform_completed:
+		player.input_locked = true
+		_hide_space_prompt()
+		_show_dialogue("Blue Lake：让我来拉窗帘。")
+		blue_lake_transform.play()
+		return
+	blue_lake_active = not blue_lake_active
+	chalk_cursor.set_active(blue_lake_active)
+	visual_mode = "Chalk Interaction" if blue_lake_active else "Standard"
+	_hide_space_prompt()
+	_show_dialogue("Blue Lake：" + ("把粉笔移到《窗》上，点一下，拉窗帘。" if blue_lake_active else "……先收起来。"))
+	_update_ui()
+	queue_redraw()
+
+func _update_s04(delta: float) -> void:
+	if not s04_active:
+		return
+	s04_win_t = move_toward(s04_win_t, S04_PRESET_T[s04_window], delta * 2.2)
+	if s04_line_timer > 0.0:
+		s04_line_timer -= delta
+		if s04_line_timer <= 0.0:
+			if not s04_lines.is_empty():
+				_s04_next_line()
+			elif s04_finish_pending:
+				_s04_finish()
+				return
+	# 《戴珍珠耳机的少女》 goes out once the restorer is hunting for her, and only while it is not bright.
+	if s04_starry_repaired and not s04_girl_caught:
+		if not s04_girl_out and s04_window == "rod":
+			s04_girl_out = true
+			s04_girl_x = S04_GIRL_FRAME_X
+			s04_girl_dir = -1.0
+			chapter_state.mark_event(&"s04_girl_left_frame")
+		if s04_girl_out and s04_window != "cone":
+			s04_girl_frozen = false
+			_s04_walk_girl(delta)
+	if not s04_visitors_recognized and s04_win_t > 0.9 and s04_uv_on and s04_riboflavin_applied and player and absf(player.velocity.x) > 30.0:
+		for vx in S04_VISITOR_XS:
+			if absf(player.position.x - vx) < 70.0:
+				_s04_recognized()
+				break
+
+func _s04_walk_girl(delta: float) -> void:
+	if s04_girl_pause > 0.0:
+		s04_girl_pause -= delta
+		return
+	s04_girl_x += s04_girl_dir * S04_GIRL_SPEED * delta
+	if s04_girl_x <= S04_GIRL_MIN_X:
+		s04_girl_x = S04_GIRL_MIN_X
+		s04_girl_dir = 1.0
+	elif s04_girl_x >= S04_GIRL_MAX_X:
+		s04_girl_x = S04_GIRL_MAX_X
+		s04_girl_dir = -1.0
+	var near_front := absf(s04_girl_x - S04_RESTORER_FRONT) < 4.0
+	if near_front and not s04_girl_paused_here:
+		s04_girl_paused_here = true
+		s04_girl_pause = S04_GIRL_PAUSE
+	elif absf(s04_girl_x - S04_RESTORER_FRONT) > 40.0:
+		s04_girl_paused_here = false
+
+func _s04_say(lines: Array) -> void:
+	s04_lines = lines.slice(1)
+	_show_dialogue(lines[0])
+	s04_line_timer = S04_LINE_TIME
+
+func _s04_next_line() -> void:
+	if s04_lines.is_empty():
+		return
+	var line: String = s04_lines.pop_front()
+	_show_dialogue(line)
+	s04_line_timer = S04_LINE_TIME
+	if s04_girl_caught and s04_girl_out and line.contains("跑回了画框"):
+		s04_girl_out = false
+
+func _s04_update_objective() -> void:
+	if s04_girl_caught:
+		var left: Array[String] = []
+		if not s04_visitors_recognized:
+			left.append("让参观者认出你")
+		if not s04_handle_found:
+			left.append("找到《窗》的把手")
+		if not s04_frame_installed:
+			left.append("把画框装回《窗》")
+		objective_label.text = "、".join(left) if not left.is_empty() else "《窗》"
+	elif s04_starry_repaired:
+		objective_label.text = "抓住在画上乱涂的人（要让修复师看见）"
+	elif s04_restorer_met:
+		objective_label.text = "帮修复师看见画里的信号"
+	elif s04_window_seen:
+		objective_label.text = "用蓝湖拉《窗》的窗帘"
+	else:
+		objective_label.text = "这间屋子的光从哪里来？"
+
 func _try_s04_interact() -> void:
 	if not s04_active or scene_state != "gallery" or transition_started:
+		return
+	if not s04_lines.is_empty():
+		_s04_next_line()
+		return
+	if s04_finish_pending:
 		return
 	var nearest := _get_nearest_s04_interactable()
 	if nearest.is_empty():
 		return
 	var object_name: String = nearest.get("name", "")
-	if object_name == "Visitor":
-		if not s04_visitor_observed:
-			s04_visitor_observed = true
-			chapter_state.mark_event(&"s04_visitor_observed")
-			_show_dialogue("参观者：很高兴认识你。\n（她继续看着展品，似乎没有认出你。）")
-		elif not s04_visitor_recognized and s04_pigment_applied and s04_lamp_observed:
-			s04_visitor_recognized = true
-			chapter_state.mark_event(&"s04_visitor_recognized_by_light")
-			_show_dialogue("参观者：你是光，老朋友。\n啊，是你！我刚才没认出来。")
-		elif s04_visitor_recognized:
-			if not s04_visitor_moved:
-				s04_visitor_moved = true
-				_show_dialogue("参观者：我和修复师一起创作了《双生》。她负责轮廓，我负责色彩。\n这幅画里有光。让我挪开，你看看。")
+	match object_name:
+		"Visitor", "VisitorGroup":
+			_s04_talk_to_visitors()
+		"Restorer":
+			_s04_talk_to_restorer()
+		"RestorerSide":
+			if s04_win_t > 0.75:
+				_show_dialogue("（太暗了。修复师停下了手，什么也看不见。）")
 			else:
-				_show_dialogue("参观者：修复师负责轮廓，我负责色彩。\n她正在那边修复作品。")
-		else:
-			_show_dialogue("参观者：很高兴认识你。\n她又把你当成第一次见面的人。")
-	elif object_name == "Restorer":
-		if not s04_visitor_observed:
-			# The visitor is met first; until then the restorer stays bent over her work.
-			_show_dialogue("修复师盯着《星空下的神经》，没有抬头。")
-		elif not s04_restorer_observed:
-			s04_restorer_observed = true
-			chapter_state.mark_event(&"s04_restorer_observed")
-			_show_dialogue("修复师：我和那位参观者共同创作了《双生》。\n我负责轮廓，她负责色彩。她有脸盲，记人靠别的线索。")
-		elif not s04_pigment_borrowed:
-			s04_pigment_borrowed = true
-			chapter_state.mark_event(&"s04_fluorescent_pigment_borrowed")
-			_show_dialogue("修复师：借你一点荧光剂。涂在身上，蓝湖也许能看见它。")
-		else:
-			_show_dialogue("修复师：荧光剂可以帮助你被她认出来。")
-	elif object_name == "PigmentStation":
-		if not s04_pigment_borrowed:
-			_show_dialogue("先问修复师借荧光剂。")
-		else:
-			s04_pigment_applied = true
-			chapter_state.mark_event(&"s04_pigment_applied")
-			_show_dialogue("你把荧光剂涂在了身上。按 Space 使用蓝湖，观察那盏灯。")
-			_show_space_prompt()
-	elif object_name == "Lamp":
-		if not s04_pigment_applied:
-			_show_dialogue("感应灯。我修过这套灯，它会跟着观众的视线变亮。")
-		elif not s04_lamp_observed:
-			_show_dialogue("灯本身看不出什么。\nBlue Lake：按 Space 让我来看，再用粉笔点一下灯。")
-			_show_space_prompt()
-		else:
-			_show_dialogue("灯边有荧光的痕迹。旁边的灯控可以把它关掉。")
-	elif object_name == "LightSwitch":
-		if not s04_lamp_observed:
-			_show_dialogue("先用蓝湖观察灯具，再操作灯控。")
-		elif not s04_lights_off:
-			s04_lights_off = true
-			chapter_state.mark_event(&"s04_lights_turned_off")
-			_show_dialogue("灯光熄灭了。画面里有一处仍在发亮。")
-		else:
-			s04_lights_off = false
-			_show_dialogue("灯光重新亮起，画作恢复了普通颜色。")
-	elif object_name == "BlockedWindow":
-		if not s04_visitor_moved:
-			_show_dialogue("参观者还站在《窗》前。")
-		elif not s04_lights_off:
-			_show_dialogue("灯亮着时，它只是一幅普通的画。")
-		else:
-			chapter_state.mark_event(&"s04_window_unblocked")
-			chapter_state.learn(&"s04_seeing_is_not_objective")
-			chapter_state.complete_slice(ChapterState.Slice.S04_VISITOR)
-			_show_dialogue("参观者：这幅画里有光。你可以看看它。\nBlue Lake：原来认出一个人，不一定要看见他的脸。")
-			objective_label.text = "调查《窗》"
-			_enter_s05_after_s04()
-	elif object_name in ["StarryNerves", "PearlHeadphones", "SculptureTwins"]:
-		_describe_exhibit(object_name)
+				_show_dialogue("修复师盯着《星空下的神经》，没注意到你。\n她好像只看得见正前方。")
+		"Workbench":
+			_s04_use_bench()
+		"Window":
+			_s04_look_at_window()
+		"StarryNerves":
+			if s04_starry_repaired:
+				_show_dialogue("《星空下的神经》：信号沿着神经纤维流过去，一刻不停。")
+			elif s04_win_t < 0.25:
+				_show_dialogue("《星空下的神经》：漩涡不是星云，是神经纤维。\n正对着看，它一动不动。")
+			else:
+				_show_dialogue("正对着看，什么也没有。\n……眼角好像有东西在动。")
+		"PearlHeadphones":
+			_s04_look_at_girl()
+		"SculptureTwins":
+			if s04_uv_on:
+				_show_dialogue("紫外灯下，说明牌上显出两个签名。\n一个是修复师的笔迹，另一个……是参观者的。")
+			elif s04_win_t < 0.25:
+				_show_dialogue("《双生》：只看得见一个头，轮廓分明，颜色鲜艳。\n说明牌上写着：共同创作。")
+			elif s04_win_t > 0.75:
+				_show_dialogue("《双生》：只看得见一个头，灰色的，好像在微微转动。")
+			else:
+				_show_dialogue("《双生》：两个头背对着背，一个鲜艳，一个灰。\n第一次看全了。")
+	_s04_update_objective()
 	queue_redraw()
 
-func _try_s04_chalk_interaction() -> void:
-	if chalk_hover_target != "Lamp" or not s04_pigment_applied:
+func _s04_talk_to_visitors() -> void:
+	if s04_visitors_recognized:
+		_show_dialogue("参观者们：修灯的人。\n那个小影子总在《窗》前面停一停。她在上面画了东西。")
+	elif s04_win_t < 0.25:
+		chapter_state.mark_event(&"s04_visitor_observed")
+		_show_dialogue("参观者：（他缩在暗处，脸是糊的。）……太亮了。看不清。\n你是……修灯的人吗？")
+	elif s04_win_t <= 0.75:
+		if s04_starry_repaired:
+			_show_dialogue("参观者：夜里有个小影子到处走。\n我们看得见她在动，可是从来看不清她。")
+		else:
+			_show_dialogue("参观者：那幅《星空》在动。\n我总是用眼角才看得到。")
+	elif s04_riboflavin_applied and s04_uv_on:
+		_show_dialogue("参观者：刚才那个发光的……停下来就不见了。\nBlue Lake：他们只看得见动的东西。从他们面前走过去。")
+	else:
+		_show_dialogue("参观者：刚才有人走过去……\n现在什么也没有了。")
+
+func _s04_talk_to_restorer() -> void:
+	if s04_win_t > 0.75:
+		_show_dialogue("（太暗了。修复师停下了手，什么也看不见。）")
 		return
-	s04_lamp_observed = true
-	_hide_space_prompt()
-	blue_lake_active = false
-	chalk_cursor.set_active(false)
-	visual_mode = "Lamp Layer"
-	chapter_state.mark_event(&"s04_lamp_observed_in_blue_lake")
-	_show_dialogue("Blue Lake：灯边有荧光的痕迹。把灯关掉，再看那幅画。")
-	_update_ui()
+	if not s04_restorer_met:
+		s04_restorer_met = true
+		chapter_state.mark_event(&"s04_restorer_observed")
+		_s04_say([
+			"修复师：……你站在我正前方，我才看得见你。",
+			"修复师：这幅《星空下的神经》，画的是正在传导的信号。\n可我越盯着它看，它越不动。我修不下去。"
+		])
+	elif s04_signal_traced and not s04_starry_repaired:
+		_s04_repair_starry()
+	elif not s04_starry_repaired:
+		_show_dialogue("修复师：信号往哪边走？我正着看，什么也看不见。")
+	elif not s04_girl_caught:
+		_show_dialogue("修复师：我只看得见正前方。\n把那个乱涂的人，带到我面前来。")
+	else:
+		_show_dialogue("修复师：紫外灯在工作台上。\n那只画框是《窗》的，装回去吧。")
+
+func _s04_repair_starry() -> void:
+	s04_starry_repaired = true
+	s04_has_riboflavin = true
+	chapter_state.mark_event(&"s04_starry_repaired")
+	chapter_state.mark_event(&"s04_riboflavin_received")
+	_s04_say([
+		"修复师照着粉笔的线，一笔一笔补上去。\n……画里的信号流动起来了。",
+		"修复师：谢谢。还有一件事。\n有人夜里在我修好的画上乱涂。",
+		"修复师：这种黄颜料不该出现在任何一幅古画里。是核黄素。\n（她把一小瓶刮下来的黄颜料放在工作台上。）",
+		"修复师：我只在亮处看得见，那个人只在我看不见的时候动。\n帮我抓住她。"
+	])
+	_s04_update_objective()
+
+func _s04_use_bench() -> void:
+	if s04_has_riboflavin and not s04_riboflavin_applied:
+		s04_riboflavin_applied = true
+		chapter_state.mark_event(&"s04_pigment_applied")
+		_show_dialogue("格雷汉把一点核黄素抹在手背和袖口上。\n黄色的，不太显眼。")
+	elif s04_girl_caught:
+		s04_uv_on = not s04_uv_on
+		if s04_uv_on:
+			chapter_state.mark_event(&"s04_uv_on")
+		_show_dialogue("紫外灯亮了。屋里有些东西开始发出黄绿色的光。" if s04_uv_on else "紫外灯关了。")
+	elif s04_starry_repaired:
+		_show_dialogue("工作台上有一盏紫外灯。\n修复师：先别动它。先把那个人找出来。")
+	else:
+		_show_dialogue("修复师的工作台：放大镜，三种颜色的笔，一盏紫外灯。\n桌边靠着一只空画框。")
+
+func _s04_look_at_window() -> void:
+	if not s04_window_seen:
+		s04_window_seen = true
+		chapter_state.mark_event(&"s04_window_observed")
+		_show_dialogue("《窗》：整间屋子的光，都是从这幅画里照出来的。\n画上的窗帘……好像拉得动。Blue Lake：按 Space，让我来。")
+		_show_space_prompt()
+	elif s04_uv_on and s04_win_t >= 0.5 and not s04_handle_found:
+		s04_handle_found = true
+		chapter_state.mark_event(&"s04_window_handle_found")
+		_show_dialogue("紫外灯下，《窗》边上一块黄颜料亮了起来。\n下面原本画着一个把手。是她涂掉的。")
+		_s04_check_complete()
+	elif s04_girl_caught and not s04_frame_installed:
+		s04_frame_installed = true
+		chapter_state.mark_event(&"s04_window_frame_installed")
+		_show_dialogue("格雷汉把旧画框装回《窗》上。尺寸刚好。\n这幅画第一次有了窗框。")
+		_s04_check_complete()
+	elif s04_girl_caught and not s04_handle_found:
+		_show_dialogue("《窗》上看不出把手。\n（那个小影子在上面画过东西。）")
+	else:
+		_show_dialogue("《窗》：现在是「" + S04_PRESET_NAMES[s04_window] + "」。\nBlue Lake 可以拉它的窗帘。")
+
+func _s04_look_at_girl() -> void:
+	if s04_girl_out and not s04_girl_caught:
+		if s04_girl_frozen:
+			_show_dialogue("画框里是空的。\n她站在外面某处，一动不动，好像一直都站在那里。")
+		else:
+			_show_dialogue("画框里是空的。")
+	elif s04_uv_on and s04_girl_caught:
+		_show_dialogue("紫外灯下，她脸上有两道发亮的泪痕。")
+	elif s04_win_t < 0.25:
+		_show_dialogue("《戴珍珠耳机的少女》：很美。\n可是想不起她像谁。")
+	elif s04_win_t <= 0.75:
+		_show_dialogue("黄昏里，她的红嘴唇暗了下去，蓝色的耳机亮了起来。\n眼睛也是蓝的。……像另一个人。")
+	else:
+		_show_dialogue("灰色的。看不清她的脸。")
+
+func _try_s04_chalk_interaction() -> void:
+	if chalk_hover_target.begins_with("Signal"):
+		var index := int(chalk_hover_target.substr(6))
+		if index != s04_signal_progress:
+			_show_dialogue("Blue Lake：不对，信号不是从这里开始的。\n顺着它流的方向描。")
+			return
+		s04_signal_progress += 1
+		if s04_signal_progress < S04_SIGNAL_NODES.size():
+			_show_dialogue("Blue Lake：……接着描。")
+		else:
+			s04_signal_traced = true
+			chapter_state.mark_event(&"s04_signal_traced")
+			if s04_window == "mid":
+				_s04_repair_starry()
+			else:
+				_show_dialogue("Blue Lake：线描好了。\n可是太暗，修复师看不见。")
+		queue_redraw()
+		return
+	if chalk_hover_target != "S04Window":
+		return
+	var next: String = S04_PRESETS[(S04_PRESETS.find(s04_window) + 1) % S04_PRESETS.size()]
+	s04_window = next
+	chapter_state.mark_event(StringName("s04_window_" + next))
+	match next:
+		"cone":
+			_show_dialogue("Blue Lake：全开。亮的、鲜艳的、不动的。")
+		"mid":
+			_show_dialogue("Blue Lake：半掩。黄昏。两种东西都看得见一点。")
+		"rod":
+			_show_dialogue("Blue Lake：全合。灰的、暗的……可是有东西在动。")
+	if next == "cone" and s04_girl_out and not s04_girl_caught:
+		if absf(s04_girl_x - S04_RESTORER_FRONT) <= S04_CATCH_RANGE:
+			_s04_catch_girl()
+		else:
+			s04_girl_frozen = true
+			_show_dialogue("她停在了半路，一动不动。修复师背对着她，什么也没看见。\nBlue Lake：要在修复师的正前方停住她。")
+	_s04_update_objective()
 	queue_redraw()
+
+func _s04_catch_girl() -> void:
+	s04_girl_caught = true
+	s04_girl_frozen = true
+	chapter_state.mark_event(&"s04_girl_caught")
+	_s04_say([
+		"修复师抬起头。正前方，一个黄裙子、蓝头巾的小姑娘站在画框外面，一动不动。\n修复师：……是你。",
+		"少女：被看见了。\n少女：好久没有人看我第二眼了。",
+		"（她朝格雷汉身边看了一眼，好像那里站着谁。）\n少女：……你也在呀。好久不见。",
+		"少女：《窗》的把手？我画掉了。\n谁想从这里走，得先找到我呀。",
+		"（少女跑回了画框里。）\n修复师：她的颜料就是核黄素，紫外灯下会发光。紫外灯在工作台上。",
+		"修复师：那只空画框是《窗》的。我卸下来修，一直没装回去。\n装回去吧。"
+	])
+	s04_girl_x = S04_RESTORER_FRONT - 6.0   # she stays where she was caught until she runs back
+	_s04_update_objective()
+
+func _s04_recognized() -> void:
+	s04_visitors_recognized = true
+	chapter_state.mark_event(&"s04_visitor_recognized_by_light")
+	_s04_say([
+		"参观者：是——\n参观者：那个——\n参观者：修灯的人。",
+		"参观者们：那年冬天，你把灯修好了。\n我们一直在等，想再看你一次。",
+		"（他们看不清你的脸。可他们记得你走路的样子。）\nBlue Lake：原来认出一个人，不一定要看见她的脸。",
+		"参观者：那个小影子，总在《窗》前面停一停。\n她在上面画了东西。"
+	])
+	_s04_update_objective()
+	_s04_check_complete()
+
+func _s04_check_complete() -> void:
+	if s04_finish_pending or not (s04_visitors_recognized and s04_handle_found and s04_frame_installed):
+		return
+	s04_finish_pending = true
+	var closing := "Blue Lake：有窗框，有把手。\n……它现在不只是一幅画了。"
+	if s04_lines.is_empty():
+		_s04_say([closing])
+	else:
+		s04_lines.append(closing)
+
+func _s04_finish() -> void:
+	s04_finish_pending = false
+	chapter_state.mark_event(&"s04_window_unblocked")
+	chapter_state.learn(&"s04_seeing_is_not_objective")
+	chapter_state.complete_slice(ChapterState.Slice.S04_VISITOR)
+	objective_label.text = "调查《窗》"
+	_enter_s05_after_s04()
 
 func _try_s05_interact() -> void:
 	if not s05_active or scene_state != "gallery" or transition_started:
@@ -2820,22 +3217,39 @@ func _enter_s04_after_s03() -> void:
 		return
 	s03_active = false
 	s04_active = true
-	s04_visitor_observed = false
-	s04_restorer_observed = false
-	s04_pigment_borrowed = false
-	s04_pigment_applied = false
-	s04_lamp_observed = false
-	s04_lights_off = false
-	s04_visitor_recognized = false
-	s04_visitor_moved = false
+	s04_window = "cone"
+	s04_win_t = 0.0
+	s04_window_seen = false
+	s04_restorer_met = false
+	s04_signal_progress = 0
+	s04_signal_traced = false
+	s04_starry_repaired = false
+	s04_has_riboflavin = false
+	s04_riboflavin_applied = false
+	s04_girl_out = false
+	s04_girl_x = S04_GIRL_FRAME_X
+	s04_girl_pause = 0.0
+	s04_girl_paused_here = false
+	s04_girl_frozen = false
+	s04_girl_caught = false
+	s04_uv_on = false
+	s04_visitors_recognized = false
+	s04_handle_found = false
+	s04_frame_installed = false
+	s04_finish_pending = false
+	s04_lines = []
+	s04_line_timer = 0.0
+	blue_lake_active = false
+	blue_lake_transform_completed = false
+	chalk_cursor.set_active(false)
 	# Through the 里 door of the second hall Graham steps in at the left wall, walking right.
 	player.position.x = 100.0
 	chapter_state.advance_to(ChapterState.Slice.S04_VISITOR)
 	chapter_state.set_map_state(&"Museum_S04_Visitor")
 	chapter_state.set_player_goal(&"recognize_the_visitor")
 	chapter_state.mark_story_event(&"s04_started")
-	objective_label.text = "观察参观者"
-	_show_dialogue("Blue Lake：你刚才相信了一个眼睛看不到的东西。")
+	objective_label.text = "这间屋子的光从哪里来？"
+	_show_dialogue("（这间展厅很亮。光全是从中间那幅画里照出来的。）\nBlue Lake：你刚才相信了一个眼睛看不到的东西。")
 	_update_ui()
 	queue_redraw()
 
@@ -3140,6 +3554,8 @@ func _update_interaction_hint() -> void:
 			interaction_hint_label.hide()
 			return
 		interaction_hint_label.text = "左键 使用蓝湖"
+		if s04_active:
+			interaction_hint_label.text = "左键 拉窗帘" if chalk_hover_target == "S04Window" else "左键 描"
 		interaction_hint_label.position = get_viewport().get_mouse_position() + Vector2(14, -22)
 		interaction_hint_label.show()
 		return
@@ -3182,10 +3598,18 @@ func _update_interaction_hint() -> void:
 			interaction_hint_label.text = "E 装上手臂"
 		elif n3 == "HallDoor" and s03_mirror_held and not s03_crossed:
 			interaction_hint_label.text = "E 推门"
-	if s04_active and nearest.get("name", "") == "Restorer" and s04_restorer_observed and not s04_pigment_borrowed:
-		interaction_hint_label.text = "E 借荧光剂"
-	elif s04_active and nearest.get("name", "") == "PigmentStation":
-		interaction_hint_label.text = "E 涂抹荧光剂" if s04_pigment_borrowed else "先向修复师借荧光剂"
+	if s04_active:
+		var n4: String = nearest.get("name", "")
+		if not s04_lines.is_empty():
+			interaction_hint_label.text = "E 继续"
+		elif n4 in ["Restorer", "Visitor", "VisitorGroup"]:
+			interaction_hint_label.text = "E 说话"
+		elif n4 == "Workbench" and s04_has_riboflavin and not s04_riboflavin_applied:
+			interaction_hint_label.text = "E 抹上核黄素"
+		elif n4 == "Workbench" and s04_girl_caught:
+			interaction_hint_label.text = "E 关紫外灯" if s04_uv_on else "E 开紫外灯"
+		elif n4 == "Window" and s04_girl_caught and not s04_frame_installed and not (s04_uv_on and s04_win_t >= 0.5 and not s04_handle_found):
+			interaction_hint_label.text = "E 装上画框"
 	var hint_y: float = nearest.get("hint_y", nearest.position.y - nearest.radius * 0.55)
 	interaction_hint_label.position = Vector2(nearest.position.x - 28.0, hint_y)
 	interaction_hint_label.show()
@@ -3202,8 +3626,12 @@ func _update_chalk_hover() -> void:
 		if s03_eye_lit and not s03_pov_active and mouse_position.distance_to(S02_EYE) <= 30.0:
 			chalk_hover_target = "VenusEye"
 	elif S04_ENABLED and s04_active:
-		if s04_pigment_applied and not s04_lamp_observed and mouse_position.distance_to(S04_LAMP_CENTER) <= 40.0:
-			chalk_hover_target = "Lamp"
+		if not s04_signal_traced and _s04_signal_alpha() > 0.5:
+			for k in range(S04_SIGNAL_NODES.size()):
+				if mouse_position.distance_to(S04_SIGNAL_NODES[k]) <= 14.0:
+					chalk_hover_target = "Signal%d" % k
+		if chalk_hover_target == "" and mouse_position.distance_to(S05_WINDOW_CENTER) <= 62.0:
+			chalk_hover_target = "S04Window"
 	elif S05_ENABLED and s05_active:
 		if not s05_window_open and mouse_position.distance_to(S05_WINDOW_CENTER) <= 62.0:
 			chalk_hover_target = "Window"
