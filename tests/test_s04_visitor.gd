@@ -29,7 +29,7 @@ func _run() -> void:
 	main._enter_s04_after_s03()
 	await _frames(2)
 	_check(main.s04_active, "S04 is active")
-	_check(main.player.position.x > 900.0, "Graham arrives at the right wall (x=%d)" % main.player.position.x)
+	_check(main.player.position.x < 200.0, "Graham arrives at the left wall (x=%d)" % main.player.position.x)
 	await _shot("s04_1_enter")
 
 	# Order of the room: the visitor is met before the restorer.

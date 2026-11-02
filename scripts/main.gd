@@ -19,6 +19,47 @@ const S01_EYE_CENTER := Vector2(910, 236)
 const S01_PHOTO_ERAS := ["开幕日", "冬天", "多年以后"]
 const S01_HINT_AFTER := 12.0                   # seconds without progress before the eye starts hinting
 
+# S02 second hall, "表与里": the invisible mirror runs through 《机械维纳斯》 at this x.
+# Left of it is the warm 表 (the S01 carpet continues), right of it the cold 里.
+const S02_AXIS_X := 552.0
+# The runner carpet slowly becomes a conveyor belt that runs back toward the entrance.
+# Its pull grows from nothing at S02_BELT_START to Graham's full walking speed at S02_BELT_FULL.
+const S02_BELT_START := 400.0                  # the carpet is still up to here (so the lamp and painting can be used)
+const S02_BELT_FULL := 556.0
+const S02_BELT_MIN_DRIFT := 45.0
+const S02_DOOR_RECT := Rect2(92, 270, 52, 102)
+const S02_GUARD_X := 190.0
+const S02_NARCISSUS_RECT := Rect2(280, 215, 100, 96)
+const S02_LIGHT_TOP := 170.0                   # the inverted prism's base (top edge)
+const S02_LIGHT_HALF := 35.0
+const S02_LIGHT_APEX_Y := 192.0
+const S02_EYE := Vector2(552, 229)             # where the crossed beams meet: Venus's missing eyes
+const S02_STALL_X := 525.0
+const S02_FIGURE_AFTER := 5.0                  # seconds standing still before Blue Lake's figure shows
+# S03: the picture lamp over 《那喀索斯》 and the real water at the bottom of the frame.
+const S03_PICTURE_LAMP := Vector2(250, 200)
+const S03_WATER_Y := 304.0
+# Where the lamp's light lands on the water for each of its angles; only the last one reflects into the prism.
+const S03_WATER_HITS := [296.0, 318.0, 342.0, 372.0]
+const S03_LAMP_GOOD := 3
+const S03_GUARD_AT_VENUS := 505.0
+# Blue Lake riding the belt through the 里 side, and the bonsai pot it pushes onto the belt.
+const S03_RIDE_SPEED := 45.0
+const S03_POT_START := 914.0                   # = the guard's mirrored place
+const S03_POT_STOP := 622.0                    # the chain stops it here, in the warm light from Venus's eye
+# Borrowing Venus's eyes: what she shows Graham, then what the exhibits say to each other (first draft;
+# the user will rewrite all dialogue).
+const S03_POV_LINES := [
+	"（维纳斯的视角。她站得高，展厅第一次亮了：在她眼里，冷的是表，暖的是里。）",
+	"格雷汉：……看她的肩膀。\n保安戴着手套的手，叶子里那几根“手指”，正好接在她的两个断口上。",
+	"少年：水里那个人，今天也很好看。",
+	"维纳斯：从前这里没有水。",
+	"少年：……那我一直在看什么？\n骷髅：在看我。",
+	"维纳斯：我的左边不会老，右边一直在烂。你说，哪一边才是我？",
+	"骷髅：烂的那边。不会老的东西，不是活的。",
+	"维纳斯：那个人替我举着手，举了很多年。他以为我要指路。\n我只是想照一照镜子。"
+]
+
 # Glass centre of the dead-end mirror at the far right of the S02/S03 hall.
 const S03_MIRROR_CENTER := Vector2(983, 286)
 # Wall spotlight aimed at 《窗》 in the S04 room; the Chalk marks it.
@@ -63,13 +104,37 @@ var s01_eyelid_closed := false
 var s01_dark_overlay: ColorRect
 var s02_active := false
 var s02_completion_started := false
-var s02_loop_count := 0
-var s02_loop_triggered := false
+var s02_guard_asked := false
+var s02_belt_stalled := false
+var s02_carried_back := false
+var s02_idle_time := 0.0
+var s02_figure_alpha := 0.0       # easter egg: Blue Lake's figure on the 里 side
 var s02_interactables: Array[Dictionary] = []
 var s03_active := false
-var s03_mirror_observed := false
-var s03_mirror_intervened := false
-var s03_mirror_crossed := false
+var s03_busy := false               # a scripted moment is playing
+var s03_lamp_fixed := false
+var s03_lamp_angle := 0
+var s03_eye_lit := false
+var s03_pov_active := false        # looking through Venus's eye
+var s03_pov_line := -1
+var s03_pov_timer := 0.0
+var s03_hands_seen := false
+var s03_glove_off := false
+var s03_guard_x := 190.0
+var s03_guard_walking := false
+var s03_arms_returned := false
+var s03_mirror_held := false
+var s03_crossed := false           # Graham has traded places with her reflection
+var s03_ride_active := false       # Blue Lake (the reflection) is riding the belt through the 里 side
+var s03_ride_x := 0.0
+var s03_ride_done := false
+var s03_pot_x := 914.0
+var s03_pot_on_belt := false
+var s03_leaves_fallen := false
+var s03_left_arm_ready := false    # the guard has brought the marble arm to Venus
+var s03_right_arm_ready := false   # the iron arm lies free in the bonsai by the chain
+var s03_left_installed := false
+var s03_right_installed := false
 var s03_interactables: Array[Dictionary] = []
 var s04_active := false
 var s04_visitor_observed := false
@@ -170,7 +235,8 @@ func _process(delta: float) -> void:
 	_update_chalk_hover()
 	_update_interaction_hint()
 	_update_s01(delta)
-	_update_s02_loop_trigger()
+	_update_s02(delta)
+	_update_s03(delta)
 	_update_route_transitions()
 	if s06_chase_active and s06_active and scene_state == "gallery" and player:
 		s06_guard_chase_x = move_toward(s06_guard_chase_x, player.position.x - 44.0, delta * 105.0)
@@ -297,8 +363,18 @@ func _build_gallery() -> void:
 		{"name":"NotAnEye", "position":Vector2(910,440), "radius":55.0, "hint_y":376.0}
 	]
 	s02_interactables = [
+		# 表 side only (Graham cannot cross the belt): door, guard, 《那喀索斯》, 《光》, 《机械维纳斯》.
+		# Their 里 counterparts hang or stand at the mirrored x on the right.
+		{"name":"HallDoor", "position":Vector2(118,440), "radius":30.0, "hint_y":376.0},
+		{"name":"SecurityGuard", "position":Vector2(S02_GUARD_X,440), "radius":45.0, "hint_y":258.0},
+		{"name":"PictureLamp", "position":Vector2(S03_PICTURE_LAMP.x,440), "radius":20.0, "hint_y":376.0},
+		{"name":"Narcissus", "position":Vector2(330,440), "radius":50.0, "hint_y":376.0},
+		{"name":"SculptureLight", "position":Vector2(500,440), "radius":24.0, "hint_y":398.0},
+		{"name":"SculptureVenus", "position":Vector2(S02_AXIS_X,440), "radius":30.0, "hint_y":398.0}
+	]
+	# Interim: S03 and S07 still use the old hall layout until S03 is rebuilt on 表与里.
+	var legacy_hall_items: Array[Dictionary] = [
 		# Left to right: 《镜中镜》, 《光》, guard, 《机械维纳斯》, then the dead-end mirror.
-		# Each piece hints at this hall's puzzle (mirrors, split light, what is missing).
 		{"name":"MirrorInMirror", "position":Vector2(260,440), "radius":50.0, "hint_y":376.0},
 		{"name":"SculptureLight", "position":Vector2(420,440), "radius":35.0, "hint_y":398.0},
 		{"name":"SecurityGuard", "position":Vector2(545,440), "radius":35.0, "hint_y":258.0},
@@ -306,12 +382,8 @@ func _build_gallery() -> void:
 		{"name":"DeadEnd", "position":Vector2(983,440), "radius":38.0, "hint_y":398.0}
 	]
 	# S03 happens in the same hall as S02; the dead-end mirror is now the puzzle.
-	s03_interactables = []
-	for item in s02_interactables:
-		var s03_item: Dictionary = item.duplicate()
-		if s03_item.name == "DeadEnd":
-			s03_item.name = "Mirror"
-		s03_interactables.append(s03_item)
+	# S03 happens in the same 表与里 hall as S02, with the same pieces.
+	s03_interactables = s02_interactables.duplicate(true)
 	s04_interactables = [
 		# Graham enters from the right (she walked left through the S03 wall), so right to left:
 		# visitor, 《窗》, lamp, switch, restorer, pigment station beside the restorer.
@@ -342,7 +414,7 @@ func _build_gallery() -> void:
 		{"name":"ReturnWindow", "position":Vector2(590,440), "radius":60.0, "hint_y":376.0, "room":"gallery"},
 		{"name":"ReturnMirror", "position":Vector2(983,440), "radius":38.0, "hint_y":398.0, "room":"hall"}
 	]
-	for item in s02_interactables:
+	for item in legacy_hall_items:
 		if item.name != "DeadEnd":
 			var s07_item: Dictionary = item.duplicate()
 			s07_item["room"] = "hall"
@@ -395,9 +467,9 @@ func _draw_gallery(room: Node2D) -> void:
 	if not LEGACY_PROTOTYPE_FLOW_ENABLED and S01_ENABLED and s01_active:
 		_draw_s01_gallery()
 	if not LEGACY_PROTOTYPE_FLOW_ENABLED and S02_ENABLED and s02_active:
-		_draw_s02_gallery()
+		_draw_s02_hall()
 	if not LEGACY_PROTOTYPE_FLOW_ENABLED and S03_ENABLED and s03_active:
-		_draw_s03_gallery()
+		_draw_s02_hall()
 	if not LEGACY_PROTOTYPE_FLOW_ENABLED and S04_ENABLED and s04_active:
 		_draw_s04_gallery()
 	if not LEGACY_PROTOTYPE_FLOW_ENABLED and S05_ENABLED and s05_active:
@@ -460,6 +532,8 @@ func _draw_s01_photo() -> void:
 		for i in range(3):
 			_draw_s01_figure(Vector2(inner.end.x - 28.0 + i * 9.0, floor_y - 13.0), Color("#7a6a5a"), 0.9)
 		draw_string(ThemeDB.fallback_font, inner.position + Vector2(4, 12), "OPENING", HORIZONTAL_ALIGNMENT_LEFT, -1, 9, Color(1, 0.95, 0.8, 0.8))
+		# Blue Lake was already here, years ago, in another form: a small girl with blue eyes in the crowd.
+		_draw_s01_blue_lake_trace(Vector2(inner.position.x + 43.0, floor_y - 9.0), 0)
 	elif s01_era == 1:
 		# Winter: snow outside a high window, coats, and someone up a ladder fixing the ceiling light.
 		var win := Rect2(inner.position + Vector2(8, 8), Vector2(22, 16))
@@ -472,6 +546,8 @@ func _draw_s01_photo() -> void:
 		draw_rect(Rect2(ladder_x + 2.0, inner.position.y + 4.0, 12, 4), Color("#f4e7b8"), true)
 		_draw_s01_figure(Vector2(ladder_x + 8.0, inner.position.y + 14.0), Color("#4b79a8"), 0.9)
 		_draw_s01_figure(Vector2(inner.position.x + 20.0, floor_y - 14.0), Color("#3b3f46"))
+		# ...a white bear with blue eyes, left on the floor under the window.
+		_draw_s01_blue_lake_trace(Vector2(inner.position.x + 40.0, floor_y), 1)
 	else:
 		# Many years later: nobody, dust, a cobweb in the corner.
 		for i in range(14):
@@ -479,7 +555,30 @@ func _draw_s01_photo() -> void:
 		draw_line(inner.position, inner.position + Vector2(16, 0), Color(1, 1, 1, 0.3), 1.0)
 		draw_line(inner.position, inner.position + Vector2(0, 14), Color(1, 1, 1, 0.3), 1.0)
 		draw_line(inner.position, inner.position + Vector2(12, 10), Color(1, 1, 1, 0.3), 1.0)
+		# ...a book with a blue cover and white pages, the only thing left in the empty hall.
+		_draw_s01_blue_lake_trace(Vector2(inner.position.x + 30.0, floor_y + 1.0), 2)
 	draw_string(ThemeDB.fallback_font, Vector2(r.position.x + 2, 340), "《美术馆开幕日》", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#e8dfc8"))
+
+## Blue Lake hides in every chapter as something white-and-blue that can become something else.
+## In the S01 photo: a blue-eyed girl (opening day), a white bear (winter), a blue book (years later).
+## No dialogue points at them; they are there to be noticed, now or on a later visit.
+func _draw_s01_blue_lake_trace(at: Vector2, form: int) -> void:
+	var blue := Color("#2f86e0")
+	if form == 0:
+		draw_circle(at, 2.6, Color("#d9c3a5"))
+		draw_colored_polygon(PackedVector2Array([at + Vector2(-2.5, 2.5), at + Vector2(2.5, 2.5), at + Vector2(4.0, 10.0), at + Vector2(-4.0, 10.0)]), Color("#f4f6f8"))
+		draw_rect(Rect2(at + Vector2(-1.6, -0.6), Vector2(1.2, 1.2)), blue, true)
+		draw_rect(Rect2(at + Vector2(0.6, -0.6), Vector2(1.2, 1.2)), blue, true)
+	elif form == 1:
+		draw_circle(at + Vector2(0, -3), 3.2, Color("#f4f6f8"))
+		draw_circle(at + Vector2(-2.6, -6), 1.3, Color("#f4f6f8"))
+		draw_circle(at + Vector2(2.6, -6), 1.3, Color("#f4f6f8"))
+		draw_circle(at + Vector2(0, 1.5), 3.6, Color("#f4f6f8"))
+		draw_rect(Rect2(at + Vector2(-1.8, -4.2), Vector2(1.1, 1.1)), blue, true)
+		draw_rect(Rect2(at + Vector2(0.8, -4.2), Vector2(1.1, 1.1)), blue, true)
+	else:
+		draw_rect(Rect2(at + Vector2(-5, -3), Vector2(10, 4)), blue, true)
+		draw_line(at + Vector2(-4, -1.5), at + Vector2(4, -1.5), Color("#f4f6f8"), 1.0)
 
 func _draw_s01_map() -> void:
 	var r := S01_MAP_RECT
@@ -579,8 +678,501 @@ func _draw_s01_not_an_eye() -> void:
 	draw_string(ThemeDB.fallback_font, Vector2(r.position.x + 22, r.end.y - 14), "这不是一只眼睛", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("#e8e2d0"))
 	draw_string(ThemeDB.fallback_font, Vector2(r.position.x - 6, 318), "《这不是一只眼睛》", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#e8dfc8"))
 
-func _draw_s02_gallery() -> void:
-	# One continuous hall, left to right: entrance, 《镜中镜》, 《光》, guard, 《机械维纳斯》, dead-end mirror.
+func _s02_mx(x: float) -> float:
+	return 2.0 * S02_AXIS_X - x
+
+## 0 on the 表 side, 1 on the 里 side, blending across the axis over `half` pixels.
+func _s02_k(x: float, half: float) -> float:
+	return clampf((x - (S02_AXIS_X - half)) / (half * 2.0), 0.0, 1.0)
+
+## How dark the second hall is for Graham. Only Venus's eye is lit until she holds the mirror.
+func _s02_darkness() -> float:
+	if s03_mirror_held:
+		return 0.25
+	return 0.86
+
+func _draw_s02_hall() -> void:
+	# 表与里: everything left of the axis has a counterpart at the mirrored x, made of something else.
+	# The hall starts dark: in silhouette the 里 side reads as a reflection of the 表 side.
+	var t := Time.get_ticks_msec() / 1000.0
+	_draw_s02_room(t, false)
+	var dark := _s02_darkness()
+	_draw_s02_dark_overlay(dark)
+	if dark > 0.5:
+		_draw_s02_silhouettes()
+	if s03_pot_on_belt and dark > 0.5:
+		_draw_s02_bonsai()           # it rides into the warm light from Venus's eye
+	_draw_s02_picture_lamps()
+	if s03_eye_lit or s03_mirror_held:
+		_draw_s02_light(t)
+	if s03_mirror_held:
+		_draw_s03_reflection()
+	if blue_lake_active and s03_active and not s03_pov_active:
+		_draw_s03_blue_lake_layer(t)
+	_draw_s02_blue_lake_figure()
+	if s03_pov_active:
+		_draw_s03_venus_pov(t)
+
+## The darkness, drawn in strips so that Blue Lake, riding the belt, carries a little light with it.
+func _draw_s02_dark_overlay(dark: float) -> void:
+	if not s03_ride_active:
+		draw_rect(Rect2(84, 140, 936, 368), Color(0.02, 0.03, 0.05, dark), true)
+		return
+	var x := 84.0
+	while x < 1020.0:
+		var d := absf(x + 6.0 - s03_ride_x)
+		var a := dark * clampf((d - 40.0) / 90.0, 0.25, 1.0)
+		draw_rect(Rect2(x, 140, 12.6, 368), Color(0.02, 0.03, 0.05, a), true)
+		x += 12.0
+
+## The lit room. `pov` draws it the way Venus sees it (used inside her view).
+func _draw_s02_room(t: float, _pov: bool) -> void:
+	var left := 84.0
+	var right := 1020.0
+	var blend := 90.0
+	var warm_wall := Color("#4a3628")
+	var cold_wall := Color("#2c3b47")
+	var warm_floor := Color("#3a2c22")
+	var cold_floor := Color("#222c34")
+	var steps := 24
+	var w := (right - left) / steps
+	for i in range(steps):
+		var x0 := left + i * w
+		var k := _s02_k(x0 + w * 0.5, blend)
+		draw_rect(Rect2(x0, 140, w + 0.6, 232), warm_wall.lerp(cold_wall, k), true)
+		draw_rect(Rect2(x0, 372, w + 0.6, 136), warm_floor.lerp(cold_floor, k), true)
+	for x in range(int(left) + 6, int(S02_AXIS_X + blend), 12):
+		draw_line(Vector2(x, 140), Vector2(x, 372), Color(1.0, 0.85, 0.6, 0.06 * (1.0 - _s02_k(x, blend))), 1.0)
+	for x in range(int(S02_AXIS_X - blend), int(right), 26):
+		draw_line(Vector2(x, 140), Vector2(x, 372), Color(0.8, 0.9, 1.0, 0.18 * _s02_k(x, blend)), 1.0)
+		for y in range(152, 372, 26):
+			draw_line(Vector2(x, y), Vector2(x + 26, y), Color(0.8, 0.9, 1.0, 0.18 * _s02_k(x + 13, blend)), 1.0)
+	draw_string(ThemeDB.fallback_font, Vector2(116, 175), "第二展厅", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color("#d8c7a8"))
+	# Ceiling lights stay off until Venus holds the mirror.
+	for lx in [250.0, 400.0]:
+		for side in [0, 1]:
+			var x: float = lx if side == 0 else _s02_mx(lx)
+			draw_rect(Rect2(x - 10.0, 142, 20, 7), Color("#b9a27a") if side == 0 else Color("#8fa3b0"), true)
+			if s03_mirror_held:
+				var cone := Color(1.0, 0.86, 0.6, 0.06) if side == 0 else Color(0.7, 0.85, 1.0, 0.06)
+				draw_colored_polygon(PackedVector2Array([Vector2(x - 6.0, 149), Vector2(x + 6.0, 149), Vector2(x + 70.0, 340), Vector2(x - 70.0, 340)]), cone)
+	_draw_s02_doors()
+	_draw_s02_narcissus()
+	_draw_s02_guard_and_bonsai()
+	_draw_s02_runner(t)
+	_draw_s02_venus()
+	_draw_s02_stanchions()
+
+## A person-shaped outline. The guard and the leafy bonsai share it, so in the dark they look like
+## an object and its reflection.
+func _draw_s02_person_shape(x: float, dir: float, col: Color) -> void:
+	draw_circle(Vector2(x, 318), 15.0, col)
+	draw_rect(Rect2(x - 16, 332, 32, 50), col, true)
+	draw_rect(Rect2(x - 13, 382, 26, 16), col, true)
+	draw_line(Vector2(x + dir * 14, 342), Vector2(x + dir * 50, 330), col, 7.0)
+
+func _draw_s02_silhouettes() -> void:
+	var rim := Color(0.55, 0.6, 0.66, 0.35)
+	var body := Color(0.05, 0.06, 0.08, 1.0)
+	if not s03_glove_off:
+		_draw_s02_person_shape(s03_guard_x - 1.0, 1.0, rim)
+		_draw_s02_person_shape(s03_guard_x, 1.0, body)
+	if not s03_pot_on_belt and not s03_ride_active:
+		_draw_s02_person_shape(s03_pot_x - 1.0, -1.0, rim)
+		_draw_s02_person_shape(s03_pot_x, -1.0, body)
+	for door in [S02_DOOR_RECT, Rect2(_s02_mx(S02_DOOR_RECT.end.x), S02_DOOR_RECT.position.y, S02_DOOR_RECT.size.x, S02_DOOR_RECT.size.y)]:
+		draw_rect(door, rim, false, 1.5)
+	for frame in [S02_NARCISSUS_RECT, Rect2(_s02_mx(S02_NARCISSUS_RECT.end.x), S02_NARCISSUS_RECT.position.y, S02_NARCISSUS_RECT.size.x, S02_NARCISSUS_RECT.size.y)]:
+		draw_rect(frame, rim, false, 1.5)
+	draw_circle(S02_EYE, 12.0, rim)
+	draw_rect(Rect2(S02_AXIS_X - 25, 320, 50, 52), rim, false, 1.5)
+	draw_line(Vector2(S02_AXIS_X, 240), Vector2(S02_AXIS_X, 320), rim, 18.0)
+	var prism := PackedVector2Array([Vector2(S02_AXIS_X - S02_LIGHT_HALF, S02_LIGHT_TOP), Vector2(S02_AXIS_X + S02_LIGHT_HALF, S02_LIGHT_TOP), Vector2(S02_AXIS_X, S02_LIGHT_APEX_Y), Vector2(S02_AXIS_X - S02_LIGHT_HALF, S02_LIGHT_TOP)])
+	draw_polyline(prism, rim, 1.5)
+
+func _draw_s02_doors() -> void:
+	# The entrance (S01's door seen from inside) and its 里 counterpart. The materials swap with S01's route.
+	var future := s01_exit_route == "future"
+	var r := S02_DOOR_RECT
+	var r2 := Rect2(_s02_mx(r.end.x), r.position.y, r.size.x, r.size.y)
+	_draw_s02_door(r, future)
+	_draw_s02_door(r2, not future)
+	draw_rect(r2, Color(0.4, 0.6, 0.8, 0.12), true)
+	for door in [r, r2]:
+		draw_string(ThemeDB.fallback_font, Vector2(door.position.x + 12, door.position.y - 6), "出口", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#d9d4b6"))
+	# An inventory tag hangs from the 里 door's handle. It carries Graham's name.
+	var tag_at := Vector2(r2.position.x + 8.0, r2.get_center().y + 8.0)
+	draw_line(tag_at, tag_at + Vector2(0, 8), Color("#9fb0bb"), 1.0)
+	draw_rect(Rect2(tag_at + Vector2(-9, 8), Vector2(18, 10)), Color("#cfd6d8"), true)
+
+func _draw_s02_door(r: Rect2, rusted: bool) -> void:
+	if rusted:
+		draw_rect(r, Color("#4b2c1d"), true)
+		var inner := r.grow_individual(-6, -6, -6, 0)
+		draw_rect(inner, Color("#6e3b22"), true)
+		draw_rect(Rect2(inner.position + Vector2(9, 30), Vector2(20, 26)), Color("#0e1620"), true)
+		for i in range(14):
+			var p := inner.position + Vector2(fmod(i * 17.0, inner.size.x), fmod(i * 29.0, inner.size.y))
+			draw_circle(p, 2.0 + (i % 3), Color(0.55, 0.3, 0.16, 0.9))
+	else:
+		draw_rect(r, Color("#5a3f2a"), true)
+		var inner := r.grow_individual(-6, -6, -6, 0)
+		draw_rect(inner, Color("#7a5536"), true)
+		draw_rect(Rect2(inner.position + Vector2(6, 8), Vector2(inner.size.x - 12, 34)), Color("#6a472c"), false, 2.0)
+		draw_rect(Rect2(inner.position + Vector2(6, 50), Vector2(inner.size.x - 12, 34)), Color("#6a472c"), false, 2.0)
+		draw_circle(Vector2(inner.end.x - 7.0, inner.get_center().y + 4.0), 3.0, Color("#d9c997"))
+
+func _draw_s02_narcissus() -> void:
+	# 《那喀索斯》 split in two. The water at the bottom of the frame is real (and reflects).
+	# 表: the boy bows over it. 里, at the mirrored place: a kneeling skeleton.
+	var r := S02_NARCISSUS_RECT
+	draw_rect(r, Color("#b49464"), true)
+	var inner := r.grow(-7.0)
+	draw_rect(inner, Color("#3a2e24"), true)
+	var skin := Color("#d9b89a")
+	draw_colored_polygon(PackedVector2Array([Vector2(310, 252), Vector2(336, 258), Vector2(340, 284), Vector2(312, 292)]), Color("#8a5a3c"))
+	draw_circle(Vector2(345, 262), 7.0, skin)
+	draw_line(Vector2(337, 266), Vector2(354, 294), skin, 3.0)
+	draw_rect(Rect2(304, 286, 40, 8), Color("#5d4030"), true)
+	_draw_s02_water(Rect2(inner.position.x, S03_WATER_Y - 3.0, inner.size.x, inner.end.y - S03_WATER_Y + 3.0), false)
+	draw_rect(Rect2(r.position.x + 25, r.end.y + 8, 50, 12), Color("#b39552"), true)
+	draw_string(ThemeDB.fallback_font, Vector2(r.position.x + 12, r.end.y + 38), "《那喀索斯》", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color("#e8dfc8"))
+	var r2 := Rect2(_s02_mx(r.end.x), r.position.y, r.size.x, r.size.y)
+	draw_rect(r2, Color("#6b6a64"), true)
+	var inner2 := r2.grow(-7.0)
+	draw_rect(inner2, Color("#1f272d"), true)
+	var bone := Color("#d8d4c4")
+	var skull := Vector2(_s02_mx(345), 262)
+	draw_circle(skull, 7.0, bone)
+	draw_circle(skull + Vector2(-2.5, -1), 1.6, Color("#1f272d"))
+	draw_circle(skull + Vector2(2.0, -1), 1.6, Color("#1f272d"))
+	draw_line(Vector2(_s02_mx(336), 260), Vector2(_s02_mx(318), 286), bone, 2.0)
+	for i in range(4):
+		var y := 262.0 + i * 6.0
+		draw_line(Vector2(_s02_mx(336) - i * 1.5, y), Vector2(_s02_mx(320) + i * 1.0, y + 4.0), bone, 1.0)
+	draw_line(Vector2(_s02_mx(337), 266), Vector2(_s02_mx(354), 294), bone, 1.5)
+	draw_line(Vector2(_s02_mx(306), 292), Vector2(_s02_mx(342), 292), bone, 1.5)
+	_draw_s02_water(Rect2(inner2.position.x, S03_WATER_Y - 3.0, inner2.size.x, inner2.end.y - S03_WATER_Y + 3.0), true)
+	var tag := Rect2(r2.position.x + 30, r2.end.y + 8, 40, 14)
+	draw_rect(tag, Color("#cfd6d8"), true)
+	for i in range(8):
+		draw_line(Vector2(tag.position.x + 4 + i * 4, tag.position.y + 3), Vector2(tag.position.x + 4 + i * 4, tag.end.y - 3), Color("#2a3238"), 1.0 + (i % 2))
+	draw_string(ThemeDB.fallback_font, Vector2(tag.position.x + 2, tag.end.y + 12), "No.0332", HORIZONTAL_ALIGNMENT_LEFT, -1, 9, Color("#9fb0bb"))
+
+func _draw_s02_water(r: Rect2, cold: bool) -> void:
+	var lit := s03_eye_lit or s03_mirror_held
+	var base := Color(0.25, 0.42, 0.5, 0.9) if not cold else Color(0.2, 0.32, 0.42, 0.9)
+	draw_rect(r, base, true)
+	var t := Time.get_ticks_msec() / 1000.0
+	for i in range(3):
+		var y := r.position.y + 2.0 + i * 3.0
+		var off := sin(t * 2.0 + i) * 4.0
+		draw_line(Vector2(r.position.x + 4 + off, y), Vector2(r.end.x - 4 + off, y), Color(0.85, 0.95, 1.0, 0.25 + (0.35 if lit else 0.0)), 1.0)
+	if lit and not cold:
+		# The boy finally sees himself: his reflection, upside down in the water.
+		draw_circle(Vector2(345, r.position.y + 5.0), 3.5, Color(0.85, 0.72, 0.6, 0.7))
+
+func _draw_s02_picture_lamps() -> void:
+	# A picture lamp on a long arm over each 《那喀索斯》. 表 warm, 里 cold; the 里 one mirrors the 表 one.
+	for side in [0, 1]:
+		var lamp := S03_PICTURE_LAMP if side == 0 else Vector2(_s02_mx(S03_PICTURE_LAMP.x), S03_PICTURE_LAMP.y)
+		var mount := Vector2(S02_NARCISSUS_RECT.position.x + 10.0, S02_NARCISSUS_RECT.position.y)
+		if side == 1:
+			mount.x = _s02_mx(mount.x)
+		draw_line(mount, lamp, Color("#8d7b5c") if side == 0 else Color("#6f7a80"), 2.0)
+		draw_circle(lamp, 5.0, Color("#c8a35a") if side == 0 else Color("#8a969c"))
+		if not s03_lamp_fixed:
+			continue
+		var beam := Color(1.0, 0.85, 0.55, 0.32) if side == 0 else Color(0.6, 0.8, 1.0, 0.32)
+		var hit := _s03_water_hit(s03_lamp_angle)
+		var end := _s03_reflection_end(s03_lamp_angle)
+		if side == 1:
+			hit.x = _s02_mx(hit.x)
+			end.x = _s02_mx(end.x)
+		draw_circle(lamp, 7.0, Color(beam.r, beam.g, beam.b, 0.8))
+		draw_line(lamp, hit, beam, 3.0)
+		draw_line(hit, end, beam, 3.0)
+		draw_circle(hit, 4.0, Color(1, 1, 1, 0.5))
+		draw_circle(end, 5.0, Color(beam.r, beam.g, beam.b, 0.5))
+
+func _draw_s02_guard_and_bonsai() -> void:
+	# The guard (long sleeves, gloves) has stood by the door for years, "pointing" across: he is
+	# holding Venus's marble arm. In 里 a bonsai thick with rust-iron leaves holds her iron arm.
+	var gx := s03_guard_x
+	var uniform := Color("#566b7a")
+	var marble := Color("#e8e4da")
+	draw_circle(Vector2(gx, 318), 14.0, Color("#bba88c"))
+	draw_rect(Rect2(gx - 14, 300, 28, 7), Color("#2d3a46"), true)
+	draw_rect(Rect2(gx - 15, 332, 30, 50), uniform, true)
+	draw_line(Vector2(gx - 7, 382), Vector2(gx - 7, 398), Color("#3a4a56"), 5.0)
+	draw_line(Vector2(gx + 7, 382), Vector2(gx + 7, 398), Color("#3a4a56"), 5.0)
+	if s03_left_installed:
+		# Arm down at last.
+		draw_line(Vector2(gx + 13, 340), Vector2(gx + 16, 372), uniform, 6.0)
+		draw_circle(Vector2(gx + 16, 375), 3.5, Color("#bba88c"))
+	elif s03_glove_off:
+		# Holding the marble arm out (walking to Venus, then waiting beside her).
+		draw_line(Vector2(gx + 13, 342), Vector2(gx + 26, 352), uniform, 6.0)
+		draw_line(Vector2(gx + 24, 350), Vector2(gx + 52, 344), marble, 6.0)
+		draw_circle(Vector2(gx + 54, 343), 4.0, marble)
+	else:
+		draw_line(Vector2(gx + 14, 342), Vector2(gx + 44, 331), uniform, 6.0)
+		draw_circle(Vector2(gx + 49, 329), 5.0, Color("#d6d2c6"))
+	if not s03_glove_off:
+		draw_string(ThemeDB.fallback_font, Vector2(gx - 18, 290), "保安", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color("#e8dfc8"))
+	_draw_s02_bonsai()
+
+func _draw_s02_bonsai() -> void:
+	var bx := s03_pot_x
+	var dy := 16.0 if s03_pot_on_belt else 0.0      # on the belt it sits a little forward
+	var wood := Color("#6f6658")
+	var wire := Color("#9a5a32")
+	draw_colored_polygon(PackedVector2Array([Vector2(bx - 15, 382 + dy), Vector2(bx + 15, 382 + dy), Vector2(bx + 12, 398 + dy), Vector2(bx - 12, 398 + dy)]), Color("#56635f"))
+	draw_line(Vector2(bx, 382 + dy), Vector2(bx, 330 + dy), wood, 5.0)
+	draw_line(Vector2(bx - 2, 342 + dy), Vector2(bx - 44, 331 + dy), wood, 4.0)
+	if not s03_leaves_fallen:
+		# Rust-iron leaves in a person's outline; a few finger-like twigs stick out at the branch tip.
+		var leaf := Color("#8a4b2a")
+		for i in range(26):
+			var a := i * 2.4
+			var rr := 4.0 + fmod(i * 7.0, 11.0)
+			draw_circle(Vector2(bx, 318 + dy) + Vector2(cos(a), sin(a)) * rr * 0.9, 4.0, leaf.darkened(fmod(i * 0.13, 0.4)))
+		for i in range(40):
+			var p := Vector2(bx - 14 + fmod(i * 7.3, 28.0), 334 + dy + fmod(i * 11.0, 48.0))
+			draw_circle(p, 4.0, leaf.darkened(fmod(i * 0.07, 0.35)))
+		for i in range(10):
+			var p := Vector2(bx - 14 - i * 3.0, 340 + dy - i * 1.0)
+			draw_circle(p, 3.5, leaf)
+		for k in range(4):
+			draw_line(Vector2(bx - 46, 331 + dy), Vector2(bx - 54, 326 + dy + k * 3.0), Color("#7c4a2c"), 1.5)
+		for i in range(6):
+			var p := Vector2(bx - 8 - i * 6, 339 + dy - i * 1.5)
+			draw_line(p + Vector2(0, -3), p + Vector2(3, 3), wire, 1.2)
+	else:
+		# Bare: the leaves lie around the pot, the wire hangs loose.
+		for i in range(14):
+			draw_circle(Vector2(bx - 18 + fmod(i * 5.0, 36.0), 396 + dy), 2.5, Color("#6e3b22"))
+		draw_line(Vector2(bx - 20, 336 + dy), Vector2(bx - 24, 350 + dy), wire, 1.2)
+		if not s03_right_installed:
+			# The iron arm, free in the branches.
+			draw_line(Vector2(bx - 8, 340 + dy), Vector2(bx - 46, 334 + dy), Color("#7c4a2c"), 6.0)
+			draw_circle(Vector2(bx - 48, 333 + dy), 4.0, Color("#6a3c22"))
+	draw_line(Vector2(bx - 30, 335 + dy), Vector2(bx - 30, 343 + dy), Color("#9fb0bb"), 1.0)
+	draw_rect(Rect2(bx - 40, 343 + dy, 22, 11), Color("#cfd6d8"), true)
+	draw_string(ThemeDB.fallback_font, Vector2(bx - 39, 352 + dy), "保安", HORIZONTAL_ALIGNMENT_LEFT, -1, 8, Color("#2a3238"))
+
+func _draw_s02_runner(t: float) -> void:
+	var y0 := 392.0
+	var h := 108.0
+	var start := 100.0
+	var end := 1012.0
+	var half := 60.0
+	var steps := 40
+	var w := (end - start) / steps
+	for i in range(steps):
+		var x0 := start + i * w
+		var k := _s02_k(x0 + w * 0.5, half)
+		draw_rect(Rect2(x0, y0, w + 0.6, h), Color("#5e2a26").lerp(Color("#24292d"), k), true)
+	draw_line(Vector2(start + 6, y0 + 5), Vector2(S02_AXIS_X - half, y0 + 5), Color("#c19a5b"), 2.0)
+	draw_line(Vector2(start + 6, y0 + h - 5), Vector2(S02_AXIS_X - half, y0 + h - 5), Color("#c19a5b"), 2.0)
+	for i in range(12):
+		var x := S02_AXIS_X - half + i * 10.0
+		var a := 1.0 - i / 12.0
+		draw_line(Vector2(x, y0 + 5), Vector2(x + 10, y0 + 5), Color(0.76, 0.6, 0.36, a), 2.0)
+		draw_line(Vector2(x, y0 + h - 5), Vector2(x + 10, y0 + h - 5), Color(0.76, 0.6, 0.36, a), 2.0)
+	draw_line(Vector2(S02_AXIS_X - half, y0 + 1), Vector2(end, y0 + 1), Color(0.6, 0.66, 0.7, 0.5), 3.0)
+	draw_line(Vector2(S02_AXIS_X - half, y0 + h - 1), Vector2(end, y0 + h - 1), Color(0.6, 0.66, 0.7, 0.5), 3.0)
+	var speed: float = 0.0 if s03_crossed else (player.speed if player else 0.0)
+	var offset := fmod(t * speed, 28.0)
+	var x := S02_AXIS_X - half * 2.0 + 28.0 - offset
+	while x < end:
+		var k := _s02_k(x, half)
+		if k > 0.0:
+			draw_line(Vector2(x, y0 + 4), Vector2(x, y0 + h - 4), Color(0.05, 0.06, 0.07, 0.8 * k), 2.0)
+		x += 28.0
+	var arrow_offset := fmod(t * speed, 112.0)
+	var ax := S02_AXIS_X - half + 112.0 - arrow_offset
+	while ax < end - 10.0:
+		var k := _s02_k(ax, half)
+		if k > 0.0:
+			draw_colored_polygon(PackedVector2Array([Vector2(ax, y0 + h * 0.5), Vector2(ax + 16, y0 + h * 0.5 - 9), Vector2(ax + 16, y0 + h * 0.5 + 9)]), Color(0.8, 0.78, 0.62, 0.45 * k))
+		ax += 112.0
+
+func _draw_s02_venus() -> void:
+	# 《机械维纳斯》 on the axis: marble on the 表 side, rusted metal on the 里 side.
+	var marble := Color("#cfc8b8")
+	var rust := Color("#7c4a2c")
+	var ax := S02_AXIS_X
+	draw_rect(Rect2(ax - 25, 320, 25, 52), marble.darkened(0.15), true)
+	draw_rect(Rect2(ax, 320, 25, 52), rust.darkened(0.15), true)
+	var body_left := PackedVector2Array([Vector2(ax, 240), Vector2(ax - 6, 242), Vector2(ax - 16, 250), Vector2(ax - 18, 258), Vector2(ax - 13, 268), Vector2(ax - 11, 284), Vector2(ax - 19, 302), Vector2(ax - 16, 320), Vector2(ax, 320)])
+	var body_right := PackedVector2Array()
+	for p in body_left:
+		body_right.append(Vector2(_s02_mx(p.x), p.y))
+	draw_colored_polygon(body_left, marble)
+	draw_colored_polygon(body_right, rust)
+	var head_left := PackedVector2Array()
+	var head_right := PackedVector2Array()
+	for i in range(13):
+		var a := PI * 0.5 + PI * i / 12.0
+		head_left.append(S02_EYE + Vector2(cos(a), sin(a)) * 12.0)
+		head_right.append(S02_EYE + Vector2(-cos(a), sin(a)) * 12.0)
+	draw_colored_polygon(head_left, marble)
+	draw_colored_polygon(head_right, rust)
+	for i in range(7):
+		var y := 246.0 + i * 11.0
+		draw_line(Vector2(ax + 1, y), Vector2(ax - 4 - (i % 3) * 4, y + 6), Color(0.48, 0.29, 0.17, 0.75), 1.5)
+		draw_circle(Vector2(ax + 3 + (i % 2) * 5, y + 3), 1.2, Color(0.8, 0.77, 0.7, 0.6))
+	for i in range(6):
+		draw_circle(Vector2(ax + 6 + fmod(i * 5.0, 12.0), 252 + i * 11.0), 1.8, Color("#5a2f1a"))
+	draw_circle(S02_EYE + Vector2(-5, 0), 2.2, Color("#2a2420"))
+	draw_circle(S02_EYE + Vector2(5, 0), 2.2, Color("#1c1410"))
+	if s03_left_installed:
+		draw_line(Vector2(ax - 17, 254), Vector2(ax - 26, 282), marble, 6.0)
+		draw_line(Vector2(ax - 26, 282), Vector2(ax - 14, 292), marble, 5.0)
+	if s03_right_installed:
+		draw_line(Vector2(ax + 17, 254), Vector2(ax + 26, 282), rust, 6.0)
+		draw_line(Vector2(ax + 26, 282), Vector2(ax + 14, 292), rust, 5.0)
+	if s03_mirror_held:
+		draw_set_transform(Vector2(ax, 290), 0.0, Vector2(0.55, 1.0))
+		draw_circle(Vector2.ZERO, 20.0, Color("#b8a272"))
+		draw_circle(Vector2.ZERO, 17.0, Color(0.75, 0.86, 0.95, 0.95))
+		draw_set_transform(Vector2.ZERO)
+		draw_line(Vector2(ax - 4, 278), Vector2(ax + 3, 300), Color(1, 1, 1, 0.7), 1.5)
+	draw_string(ThemeDB.fallback_font, Vector2(ax - 44, 392), "《机械维纳斯》", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#e8dfc8"))
+
+func _draw_s02_stanchions() -> void:
+	var lx := 500.0
+	var rx := _s02_mx(lx)
+	draw_line(Vector2(lx, 352), Vector2(lx, 398), Color("#c8a35a"), 4.0)
+	draw_circle(Vector2(lx, 352), 4.0, Color("#d8b46a"))
+	draw_line(Vector2(rx, 352), Vector2(rx, 398), Color("#7a4a2a"), 4.0)
+	draw_circle(Vector2(rx, 352), 4.0, Color("#6a3c22"))
+	var prev := Vector2(lx, 355)
+	for i in range(1, 11):
+		var u := i / 10.0
+		var p := Vector2(lerpf(lx, S02_AXIS_X, u), 355.0 + sin(u * PI * 0.5) * 12.0)
+		draw_line(prev, p, Color("#9c2f2a"), 3.0)
+		prev = p
+	for i in range(11):
+		var u := i / 10.0
+		var p := Vector2(lerpf(S02_AXIS_X, rx, u), 355.0 + cos(u * PI * 0.5) * 12.0)
+		draw_arc(p, 2.4, 0.0, TAU, 8, Color("#8a5232"), 1.3)
+
+func _draw_s02_light(t: float) -> void:
+	# 《光》: the two reflected beams (warm from the boy's water, cold from the skeleton's) enter the
+	# inverted prism and cross under its apex — at Venus's missing eyes — and land swapped.
+	var ax := S02_AXIS_X
+	var warm := Color(1.0, 0.78, 0.45, 0.2)
+	var cold := Color(0.55, 0.78, 1.0, 0.2)
+	var e := S02_EYE
+	draw_colored_polygon(PackedVector2Array([Vector2(ax - 30, 173), Vector2(ax - 7, 188), Vector2(e.x + 1.5, e.y), Vector2(e.x - 1.5, e.y)]), warm)
+	draw_colored_polygon(PackedVector2Array([Vector2(e.x - 1.5, e.y), Vector2(e.x + 1.5, e.y), Vector2(ax + 70, 372), Vector2(ax + 38, 372)]), warm)
+	draw_colored_polygon(PackedVector2Array([Vector2(ax + 30, 173), Vector2(ax + 7, 188), Vector2(e.x - 1.5, e.y), Vector2(e.x + 1.5, e.y)]), cold)
+	draw_colored_polygon(PackedVector2Array([Vector2(e.x + 1.5, e.y), Vector2(e.x - 1.5, e.y), Vector2(ax - 70, 372), Vector2(ax - 38, 372)]), cold)
+	draw_set_transform(Vector2(ax + 54, 378), 0.0, Vector2(1.0, 0.3))
+	draw_circle(Vector2.ZERO, 22.0, Color(1.0, 0.8, 0.5, 0.18))
+	draw_set_transform(Vector2(ax - 54, 378), 0.0, Vector2(1.0, 0.3))
+	draw_circle(Vector2.ZERO, 22.0, Color(0.6, 0.8, 1.0, 0.18))
+	draw_set_transform(Vector2.ZERO)
+	var prism := PackedVector2Array([Vector2(ax - S02_LIGHT_HALF, S02_LIGHT_TOP), Vector2(ax + S02_LIGHT_HALF, S02_LIGHT_TOP), Vector2(ax, S02_LIGHT_APEX_Y)])
+	draw_colored_polygon(prism, Color(0.82, 0.92, 1.0, 0.45))
+	draw_polyline(PackedVector2Array([prism[0], prism[1], prism[2], prism[0]]), Color(0.95, 0.98, 1.0, 0.8), 1.5)
+	draw_string(ThemeDB.fallback_font, Vector2(ax - 78, 168), "《光》", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#e8dfc8"))
+	var pulse := 0.85 + sin(t * 2.0) * 0.1
+	draw_set_transform(e, 0.0, Vector2(1.0, 0.42))
+	draw_circle(Vector2.ZERO, 11.0, Color(1.0, 0.97, 0.88, 0.8 * pulse))
+	draw_circle(Vector2.ZERO, 4.5, Color(0.25, 0.3, 0.4, 0.85))
+	draw_set_transform(Vector2.ZERO)
+
+func _draw_s03_reflection() -> void:
+	# Venus's mirror gives Graham a reflection at her mirrored place on the 里 side (before she crosses),
+	# or on the 表 side after (she and her reflection have traded places).
+	if not player:
+		return
+	var at := Vector2(_s02_mx(player.position.x), player.position.y)
+	var c := Color(0.75, 0.88, 1.0, 0.55)
+	draw_circle(at + Vector2(0, -4), 15.0, Color(0.17, 0.21, 0.28, 0.6))
+	draw_circle(at, 13.0, Color(0.95, 0.8, 0.7, 0.45))
+	draw_rect(Rect2(at.x - 10, at.y + 7, 20, 18), Color(0.3, 0.47, 0.66, 0.55), true)
+	draw_arc(at + Vector2(0, 4), 24.0, 0.0, TAU, 24, c, 1.0)
+
+func _draw_s03_blue_lake_layer(t: float) -> void:
+	# Blue Lake sees the mirror the hall is split by, and the threads joining each pair.
+	var chalk := Color(0.75, 0.92, 1.0, 0.75)
+	var y := 150.0
+	while y < 500.0:
+		draw_line(Vector2(S02_AXIS_X, y), Vector2(S02_AXIS_X, y + 10.0), chalk, 2.0)
+		y += 18.0
+	var pairs := [Vector2(S02_GUARD_X + 49, 329), S02_DOOR_RECT.get_center(), S02_NARCISSUS_RECT.get_center(), S03_PICTURE_LAMP]
+	for p: Vector2 in pairs:
+		var q := Vector2(_s02_mx(p.x), p.y)
+		var dash := 0.0
+		var seg_len := p.distance_to(q)
+		while dash < seg_len:
+			draw_line(p.lerp(q, dash / seg_len), p.lerp(q, minf(dash + 6.0, seg_len) / seg_len), Color(0.75, 0.92, 1.0, 0.35), 1.0)
+			dash += 14.0
+	if true:
+		var glow := 0.85 if chalk_hover_target == "VenusEye" else 0.45 + sin(t * 3.0) * 0.1
+		draw_arc(S02_EYE, 22.0, 0.0, TAU, 24, Color(0.75, 0.91, 1.0, glow), 2.0)
+
+func _draw_s03_venus_pov(t: float) -> void:
+	# Venus's view: she faces out, stands high, and is lit by the crossed beams. What is 表 to Graham is on
+	# her right, 里 on her left, and in her eye the 里 is the warm side. Only from here do the guard's gloved
+	# hand and the leaves' twig "fingers" sit exactly on her shoulders' broken ends.
+	var r := Rect2(84, 140, 936, 368)
+	draw_rect(r, Color("#0b0f14"), true)
+	var warm := Color("#6b4a32")
+	var cold := Color("#2f4250")
+	var mid := r.get_center().x
+	for i in range(24):
+		var x0 := r.position.x + i * r.size.x / 24.0
+		var k := clampf((x0 - (mid - 120.0)) / 240.0, 0.0, 1.0)
+		draw_rect(Rect2(x0, r.position.y, r.size.x / 24.0 + 0.6, 170), warm.lerp(cold, k), true)
+	# The floor seen from above, falling away under her: belt on her left, carpet on her right.
+	draw_colored_polygon(PackedVector2Array([Vector2(r.position.x, 310), Vector2(mid, 300), Vector2(mid, r.end.y), Vector2(r.position.x, r.end.y)]), Color("#2a2f33"))
+	draw_colored_polygon(PackedVector2Array([Vector2(mid, 300), Vector2(r.end.x, 310), Vector2(r.end.x, r.end.y), Vector2(mid, r.end.y)]), Color("#5e2a26"))
+	# Graham, small, far below, looking up.
+	if player:
+		draw_circle(Vector2(mid + 40, 400), 7.0, Color("#2b3547"))
+		draw_rect(Rect2(mid + 35, 405, 10, 9), Color("#4b79a8"), true)
+	# Periphery: the bonsai (her left) and the guard (her right), with the arms they hold.
+	var stump_l := Vector2(r.position.x + 150, 470)
+	var stump_r := Vector2(r.end.x - 150, 470)
+	draw_circle(Vector2(r.position.x + 60, 250), 40.0, Color("#8a4b2a"))
+	draw_rect(Rect2(r.position.x + 20, 280, 80, 130), Color("#7a4226"), true)
+	draw_line(Vector2(r.position.x + 95, 330), stump_l + Vector2(-8, -40), Color("#6f6658"), 9.0)
+	draw_circle(Vector2(r.end.x - 60, 250), 36.0, Color("#bba88c"))
+	draw_rect(Rect2(r.end.x - 100, 284, 80, 130), Color("#566b7a"), true)
+	draw_line(Vector2(r.end.x - 95, 330), stump_r + Vector2(8, -40), Color("#566b7a"), 12.0)
+	draw_circle(stump_r + Vector2(4, -38), 9.0, Color("#d6d2c6"))
+	for k in range(4):
+		draw_line(stump_l + Vector2(-8, -40), stump_l + Vector2(-2 + k * 4, -30), Color("#7c4a2c"), 2.0)
+	# Her own shoulders at the bottom corners: rust on her left, marble on her right.
+	draw_colored_polygon(PackedVector2Array([Vector2(r.position.x, r.end.y), Vector2(r.position.x, 470), stump_l + Vector2(-10, -12), stump_l + Vector2(30, 0), Vector2(r.position.x + 260, r.end.y)]), Color("#7c4a2c"))
+	draw_colored_polygon(PackedVector2Array([Vector2(r.end.x, r.end.y), Vector2(r.end.x, 470), stump_r + Vector2(10, -12), stump_r + Vector2(-30, 0), Vector2(r.end.x - 260, r.end.y)]), Color("#cfc8b8"))
+	# The hands meet the broken ends: chalk marks the fit.
+	var pulse := 0.5 + sin(t * 3.0) * 0.25
+	for s in [stump_l, stump_r]:
+		draw_arc(s + Vector2(0, -20), 26.0, 0.0, TAU, 24, Color(0.75, 0.92, 1.0, pulse), 2.0)
+	# The crossing light: the rim of her view.
+	draw_rect(r, Color(1.0, 0.95, 0.8, 0.08), false, 6.0)
+	draw_string(ThemeDB.fallback_font, Vector2(r.position.x + 16, r.position.y + 24), "维纳斯的视角", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color("#bfe8ff"))
+
+func _draw_s02_blue_lake_figure() -> void:
+	# Easter egg: if Graham stands still on the 表 side, Blue Lake's own figure develops at the
+	# mirrored spot on the 里 side — half her height, white and blue. No words.
+	if s02_figure_alpha <= 0.01 or not player or s03_mirror_held:
+		return
+	var a := s02_figure_alpha
+	var base := Vector2(s03_ride_x if s03_ride_active else _s02_mx(player.position.x), player.position.y)
+	draw_colored_polygon(PackedVector2Array([base + Vector2(-3, 12), base + Vector2(3, 12), base + Vector2(6, 25), base + Vector2(-6, 25)]), Color(0.0, 0.47, 0.84, a))
+	draw_circle(base + Vector2(0, 7), 5.0, Color(1.0, 1.0, 1.0, a))
+	draw_circle(base + Vector2(-1.8, 6.5), 1.0, Color(0.0, 0.47, 0.84, a))
+	draw_circle(base + Vector2(1.8, 6.5), 1.0, Color(0.0, 0.47, 0.84, a))
+
+func _draw_legacy_hall() -> void:
+	# Interim (S03/S07 until rebuilt). One continuous hall, left to right: entrance, 《镜中镜》, 《光》, guard, 《机械维纳斯》, dead-end mirror.
 	draw_string(ThemeDB.fallback_font, Vector2(116, 175), "第二展厅", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color("#b8c7d4"))
 	# The hall's own entrance: the loop keeps returning Graham to this doorway.
 	draw_rect(Rect2(92, 262, 50, 110), Color("#445866"), true)
@@ -619,31 +1211,16 @@ func _draw_s02_gallery() -> void:
 	draw_line(Vector2(962, 230), Vector2(1004, 340), Color(0.8, 0.95, 1.0, 0.5), 3.0)
 	draw_string(ThemeDB.fallback_font, Vector2(947, 392), "尽头的镜子", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#e8dfc8"))
 
-func _draw_s03_gallery() -> void:
-	# Same hall as S02. The mirror reflects it reversed: its far (left) wall has a door reality lacks.
-	_draw_s02_gallery()
-	draw_rect(Rect2(989, 300, 12, 34), Color(0.75, 0.9, 1.0, 0.35), false, 2.0)
-	if blue_lake_active and not s03_mirror_intervened:
-		var glow := 0.75 if chalk_hover_target == "Mirror" else 0.4
-		draw_circle(S03_MIRROR_CENTER, 55.0, Color(0.55, 0.88, 1.0, 0.11))
-		draw_arc(S03_MIRROR_CENTER, 55.0, 0.0, TAU, 32, Color(0.75, 0.91, 1.0, glow), 2.0)
-		draw_rect(Rect2(987, 298, 16, 38), Color("#bfe8ff"), false, 3.0)
-		draw_string(ThemeDB.fallback_font, Vector2(770, 196), "镜中有门，现实中没有。", HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color("#bfe8ff"))
-	if s03_mirror_intervened:
-		# The chalk copies the mirrored door onto the real left wall.
-		var pulse := 0.5 + (sin(Time.get_ticks_msec() * 0.004) + 1.0) * 0.2
-		draw_rect(Rect2(62, 262, 22, 110), Color(0.75, 0.92, 1.0, 0.18), true)
-		draw_rect(Rect2(62, 262, 22, 110), Color(0.75, 0.92, 1.0, pulse), false, 3.0)
-		draw_line(Vector2(240, 470), Vector2(160, 470), Color(0.85, 0.95, 1.0, 0.6), 3.0)
-		draw_line(Vector2(160, 470), Vector2(176, 460), Color(0.85, 0.95, 1.0, 0.6), 3.0)
-		draw_line(Vector2(160, 470), Vector2(176, 480), Color(0.85, 0.95, 1.0, 0.6), 3.0)
-
 func _draw_s04_gallery() -> void:
 	# Right to left: arrival wall, visitor, 《窗》, lamp + switch, restorer, pigment station.
 	draw_string(ThemeDB.fallback_font, Vector2(640, 175), "画作展厅", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color("#b8c7d4"))
 	draw_string(ThemeDB.fallback_font, Vector2(200, 175), "修复区", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color("#b8c7d4"))
-	# The chalk door Graham came through, now on this room's right wall.
-	draw_rect(Rect2(998, 262, 22, 110), Color(0.75, 0.92, 1.0, 0.35), false, 2.0)
+	# The door Graham came through is on the left wall. S07 still revisits by the old chalk door
+	# on the right wall until S07 is redesigned for the 表与里 hall.
+	if s07_active:
+		draw_rect(Rect2(998, 262, 22, 110), Color(0.75, 0.92, 1.0, 0.35), false, 2.0)
+	else:
+		draw_rect(Rect2(62, 262, 22, 110), Color("#4b2c1d"), true)
 	# 《窗》 hangs between the visitor and the restorer.
 	draw_rect(Rect2(540, 225, 100, 120), Color("#c7a56f"), true)
 	draw_rect(Rect2(549, 234, 82, 102), Color("#725e50"), true)
@@ -822,7 +1399,7 @@ func _s06_gaze_target() -> Vector2:
 func _draw_s07_gallery() -> void:
 	# S07 walks back through the real rooms; each keeps a second layer only Blue Lake can read.
 	if s07_room == "hall":
-		_draw_s02_gallery()
+		_draw_legacy_hall()
 		draw_rect(Rect2(62, 262, 22, 110), Color(0.75, 0.92, 1.0, 0.35), false, 2.0)
 		if blue_lake_active and not s07_mirror_trace_found:
 			var glow := 0.8 if chalk_hover_target == "ReturnMirror" else 0.4
@@ -1024,7 +1601,7 @@ func _finish_blue_lake_transformation() -> void:
 	chalk_cursor.set_active(true)
 	player.input_locked = false
 	if s03_active:
-		_show_dialogue("Blue Lake：现在，把粉笔移到镜子上，点左键。")
+		_show_dialogue("蓝湖：这就是我看到的。把粉笔移到维纳斯的眼睛上，点左键。")
 	elif s04_active:
 		_show_dialogue("Blue Lake：用荧光照一下那盏灯。")
 	elif s05_active:
@@ -1037,22 +1614,6 @@ func _finish_blue_lake_transformation() -> void:
 		_show_dialogue("Blue Lake：这次不一样。把粉笔移到《窗》上，点左键。")
 	else:
 		_show_dialogue("Blue Lake 已经变成粉笔。")
-	_update_ui()
-	queue_redraw()
-
-func _try_toggle_s03_blue_lake() -> void:
-	if not s03_mirror_observed:
-		_show_dialogue("Blue Lake：先看清楚。镜子里的东西还没有被你确认。")
-		return
-	if not blue_lake_active and not blue_lake_transform_completed:
-		player.input_locked = true
-		_show_dialogue("Blue Lake：看。")
-		blue_lake_transform.play()
-		return
-	blue_lake_active = not blue_lake_active
-	chalk_cursor.set_active(blue_lake_active)
-	visual_mode = "Chalk Interaction" if blue_lake_active else "Standard"
-	_show_dialogue("Blue Lake：" + ("把粉笔移到镜子上，点左键，描出镜中的门。" if blue_lake_active else "……先收起来。"))
 	_update_ui()
 	queue_redraw()
 
@@ -1290,8 +1851,11 @@ func _enter_s02_after_s01() -> void:
 		return
 	s01_active = false
 	s02_active = true
-	s02_loop_count = 0
-	s02_loop_triggered = false
+	s02_guard_asked = false
+	s02_belt_stalled = false
+	s02_carried_back = false
+	s02_idle_time = 0.0
+	s02_figure_alpha = 0.0
 	chapter_state.advance_to(ChapterState.Slice.S02_LOST)
 	chapter_state.set_map_state(&"Museum_S02_Loop")
 	chapter_state.set_player_goal(&"explore_the_gallery")
@@ -1299,12 +1863,12 @@ func _enter_s02_after_s01() -> void:
 	# Through the S01 door Graham arrives at this hall's entrance, on the left.
 	player.position.x = 120.0
 	objective_label.text = "继续探索美术馆"
-	_show_dialogue("蓝湖：往里面走吧。保安应该在前面。")
+	_show_dialogue("蓝湖：好暗……往里走走看。")
 	_update_ui()
 	queue_redraw()
 
 func _try_s02_interact() -> void:
-	if not s02_active or scene_state != "gallery" or transition_started:
+	if not s02_active or scene_state != "gallery" or transition_started or s02_completion_started:
 		return
 	var nearest := _get_nearest_s02_interactable()
 	if nearest.is_empty():
@@ -1313,16 +1877,106 @@ func _try_s02_interact() -> void:
 	if object_name == "SecurityGuard":
 		chapter_state.mark_event(&"s02_guard_observed")
 		chapter_state.mark_event(&"s02_guard_directed_right")
-		if s02_loop_count > 0:
-			_show_dialogue("保安再次指向最右侧。\n格雷汉：你刚才也是这么说的。我们已经回来过一次了。")
+		if s02_belt_stalled:
+			_complete_s02_counterpart()
+		elif s02_guard_asked:
+			_show_dialogue("保安：出口在对面。\n他的手臂一直没有放下来过。")
 		else:
-			_show_dialogue("保安指向最右侧。\n保安：一直往最右边走，就能找到出口。")
-	elif object_name == "DeadEnd":
-		chapter_state.mark_event(&"s02_dead_end_observed")
-		_show_dialogue("右边的通路明明能走到尽头。\n尽头的墙上挂着一面镜子。")
+			_show_dialogue("保安一动不动，长袖，戴着手套，手一直指着对面。\n保安：出口在对面。")
+		s02_guard_asked = true
 	else:
-		_describe_exhibit(object_name)
-	_try_complete_s02()
+		_s02_describe(object_name)
+
+## What the second hall's pieces say on E, in S02 and S03 (it depends on the light).
+func _s02_describe(object_name: String) -> void:
+	var lit := s03_eye_lit or s03_mirror_held
+	if object_name == "HallDoor":
+		if s01_exit_route == "future":
+			_show_dialogue("我们进来时锈穿的那扇门。从里面看，门楣上写着“出口”。\n对面也有一扇门，也写着“出口”。")
+		else:
+			_show_dialogue("我们进来的门。从里面看，门楣上写着“出口”。\n对面也有一扇门，也写着“出口”。")
+	elif object_name == "Narcissus":
+		if lit:
+			_show_dialogue("《那喀索斯》：画框下沿的水是真的。画灯一照，少年终于看见了水里的自己。\n对面同样的位置挂着另一幅：跪在水边的是一具骷髅。")
+		else:
+			_show_dialogue("《那喀索斯》：太暗了，只看得清少年低着头。\n画框下沿有什么在微微晃动……是水？")
+	elif object_name == "PictureLamp":
+		_show_dialogue("画框上伸出一盏画灯，没有亮。")
+	elif object_name == "SculptureLight":
+		if lit:
+			_show_dialogue("《光》：两束光从左右射进倒三角的棱镜，在下面交叉。\n暖的落到右边，冷的落到左边。")
+		else:
+			_show_dialogue("《光》：一块倒三角的棱镜悬在半空。\n没有光，它只是一块玻璃。")
+	elif object_name == "SculptureVenus":
+		if s03_mirror_held:
+			_show_dialogue("《机械维纳斯》：她托着一面镜子，用光的眼睛看着里面。")
+		elif lit:
+			_show_dialogue("《机械维纳斯》：没有手臂。光在她眼睛的位置交汇。\n左半身是大理石，右半身是锈。")
+		else:
+			_show_dialogue("《机械维纳斯》：黑暗里只看得出轮廓：没有手臂，也没有眼睛。\n格雷汉：……有点像阿姨。")
+
+## In the dark the far figure strikes the guard's exact pose, like a reflection without Graham in it.
+func _complete_s02_counterpart() -> void:
+	if s02_completion_started:
+		return
+	s02_completion_started = true
+	chapter_state.mark_event(&"s02_counterpart_noticed")
+	_show_dialogue("保安：出口在对面。\n格雷汉望向对面：那边也站着一个人影，和你一个姿势。……可是镜子里没有我。")
+	await get_tree().create_timer(2.6).timeout
+	_show_dialogue("蓝湖：那不是镜子。\n这里的空间有问题。")
+	await get_tree().create_timer(2.6).timeout
+	chapter_state.mark_event(&"s02_space_loop_recognized")
+	chapter_state.learn(&"s02_space_has_a_problem")
+	chapter_state.set_player_goal(&"understand_the_space")
+	chapter_state.complete_slice(ChapterState.Slice.S02_LOST)
+	objective_label.text = "这里的空间有问题。"
+	_update_ui()
+	_enter_s03_after_s02()
+
+## How hard the belt pulls Graham back toward the entrance at this x (pixels per second, leftward).
+func _s02_belt_pull(x: float) -> float:
+	if x <= S02_BELT_START:
+		return 0.0
+	var t := clampf((x - S02_BELT_START) / (S02_BELT_FULL - S02_BELT_START), 0.0, 1.0)
+	return maxf(player.speed * pow(t, 2.2), S02_BELT_MIN_DRIFT)
+
+func _update_s02(delta: float) -> void:
+	if not player:
+		return
+	var in_hall := (s02_active or (s03_active and not s03_crossed)) and scene_state == "gallery" and not transition_started
+	if not in_hall:
+		if not s02_active and not s03_active:
+			player.push_x = 0.0
+		elif s03_crossed:
+			player.push_x = 0.0
+		return
+	var x := player.position.x
+	player.push_x = 0.0 if (s02_completion_started and s02_active) else -_s02_belt_pull(x)
+	var moving := Input.get_vector("move_left", "move_right", "move_up", "move_down") != Vector2.ZERO
+	if s02_active:
+		# Walking right gets slower and slower; at the axis the floor runs back exactly as fast.
+		if not s02_belt_stalled and x >= S02_STALL_X and Input.is_action_pressed("move_right"):
+			s02_belt_stalled = true
+			chapter_state.mark_event(&"s02_belt_stalled")
+			objective_label.text = "出口在对面……可是过不去。"
+			_show_dialogue("格雷汉：……我明明在往前走。\n脚下的地面在往回走。")
+		if s02_belt_stalled and not s02_carried_back and x <= S02_BELT_START + 12.0 and not Input.is_action_pressed("move_left"):
+			s02_carried_back = true
+			chapter_state.mark_event(&"s02_carried_back")
+			if not s02_completion_started:
+				_show_dialogue("格雷汉：它把我送回来了。")
+	# Easter egg: stand still on the 表 side and Blue Lake's figure develops at the mirrored spot.
+	if moving or s03_pov_active:
+		s02_idle_time = 0.0
+	else:
+		s02_idle_time += delta
+	if s03_ride_active:
+		return
+	var target := 1.0 if s02_idle_time >= S02_FIGURE_AFTER and x < S02_AXIS_X - 20.0 and not s03_mirror_held else 0.0
+	var rate := 0.35 if target > s02_figure_alpha else 3.0
+	s02_figure_alpha = move_toward(s02_figure_alpha, target, delta * rate)
+	if s02_figure_alpha > 0.6:
+		chapter_state.mark_event(&"s02_blue_lake_figure_seen")
 
 ## Paintings and sculptures read the same wherever they are (re)visited.
 func _describe_exhibit(object_name: String) -> void:
@@ -1344,45 +1998,306 @@ func _describe_exhibit(object_name: String) -> void:
 		_show_dialogue("《盲》：没有眼睛的人像，安静地面对展厅。\n格雷汉：阿姨缺的，也是看东西的那一部分。")
 
 func _try_s03_interact() -> void:
-	if not s03_active or scene_state != "gallery" or transition_started:
+	if not s03_active or scene_state != "gallery" or transition_started or s03_busy:
+		return
+	if s03_ride_active:
+		_s03_ride_interact()
 		return
 	var nearest := _get_nearest_s03_interactable()
 	if nearest.is_empty():
 		return
 	var object_name: String = nearest.get("name", "")
-	if object_name == "SecurityGuard":
-		_show_dialogue("保安指向最右边：一直往右走，就能找到出口。")
-	elif object_name != "Mirror":
-		_describe_exhibit(object_name)
-	elif not s03_mirror_observed:
-		s03_mirror_observed = true
-		chapter_state.mark_event(&"s03_mirror_observed")
-		_show_dialogue("镜子里倒映着整个展厅。最左边那面墙上，镜子里多了一扇门。\nBlue Lake：现实里那里没有门……按 Space，让我来看。")
-		_show_space_prompt()
-	elif not s03_mirror_intervened:
-		_show_dialogue("Blue Lake：按 Space，用我的眼睛看镜子。")
-		_show_space_prompt()
+	if object_name == "PictureLamp":
+		_s03_use_picture_lamp()
+	elif object_name == "SculptureVenus" and ((s03_left_arm_ready and not s03_left_installed) or (s03_right_arm_ready and not s03_right_installed)):
+		_s03_install_arms()
+	elif object_name == "SecurityGuard":
+		if s03_left_installed:
+			_show_dialogue("保安揉着肩膀：……我都忘了自己为什么举着它。")
+		elif s03_left_arm_ready:
+			_show_dialogue("保安捧着那条手臂，等你把它装回去。")
+		elif s03_hands_seen and not blue_lake_active:
+			_s03_guard_brings_arm()
+		else:
+			_show_dialogue("保安一动不动，手一直指着对面。\n保安：出口在对面。")
+	elif object_name == "HallDoor":
+		if s03_mirror_held and not s03_crossed:
+			_s03_cross_by_reflection()
+		else:
+			_s02_describe("HallDoor")
 	else:
-		_show_dialogue("Blue Lake：反过来走。背对镜子，走到最左边的墙。")
+		_s02_describe(object_name)
+	queue_redraw()
+
+## Where the picture lamp's light lands on the painted water for each of its angles.
+func _s03_water_hit(angle: int) -> Vector2:
+	return Vector2(S03_WATER_HITS[angle], S03_WATER_Y)
+
+## The reflected ray off the water (angle of incidence = angle of reflection), clipped to the ceiling.
+func _s03_reflection_end(angle: int) -> Vector2:
+	var p := _s03_water_hit(angle)
+	var d := Vector2(p.x - S03_PICTURE_LAMP.x, -(S03_WATER_Y - S03_PICTURE_LAMP.y))
+	var to_prism := (S02_LIGHT_TOP + 2.0 - p.y) / d.y
+	var at_prism := p + d * to_prism
+	if absf(at_prism.x - S02_AXIS_X) <= S02_LIGHT_HALF:
+		return at_prism
+	return p + d * ((142.0 - p.y) / d.y)
+
+func _s03_use_picture_lamp() -> void:
+	if s03_eye_lit:
+		_show_dialogue("画灯照着水面。少年一直看着水里的自己。")
+		return
+	if not s03_lamp_fixed:
+		s03_lamp_fixed = true
+		s03_lamp_angle = 0
+		chapter_state.mark_event(&"s03_picture_lamp_fixed")
+		_show_dialogue("画灯的灯泡松了。格雷汉顺手把它拧紧。\n灯亮了。画框下沿的水面反出一道光——打在墙上。")
+		objective_label.text = "调整画灯的角度"
+		return
+	s03_lamp_angle = (s03_lamp_angle + 1) % S03_WATER_HITS.size()
+	var end := _s03_reflection_end(s03_lamp_angle)
+	if s03_lamp_angle == S03_LAMP_GOOD:
+		_s03_light_the_eye()
+	elif end.y <= 143.0:
+		_show_dialogue("格雷汉把画灯扳了一格。\n反射的光打到了天花板上。")
+	else:
+		_show_dialogue("格雷汉把画灯扳了一格。")
+
+func _s03_light_the_eye() -> void:
+	s03_eye_lit = true
+	s03_busy = true
+	chapter_state.mark_event(&"s03_venus_eye_lit")
+	_show_dialogue("水面亮了。少年第一次看见了水里的自己。\n反射的光射进棱镜——对面那幅画也亮了。两束光在棱镜里交叉，落在维纳斯的眼睛上。")
+	await get_tree().create_timer(2.8).timeout
+	s03_busy = false
+	objective_label.text = "借维纳斯的眼睛"
+	_show_dialogue("蓝湖：……她看得见了。\n按 Space，让我借她的眼睛看看。")
+	_show_space_prompt()
+
+func _s03_cross_by_reflection() -> void:
+	var reflected_x := _s02_mx(player.position.x)
+	if absf(reflected_x - (_s02_mx(S02_DOOR_RECT.get_center().x))) > 30.0:
+		_show_dialogue("镜子里，你的倒影还没有站到对面那扇门前。")
+		return
+	s03_crossed = true
+	s03_busy = true
+	player.input_locked = true
+	chapter_state.mark_event(&"s03_crossed_by_reflection")
+	_show_dialogue("格雷汉推开门。\n镜子里，她推开的是对面那扇门。")
+	await get_tree().create_timer(1.6).timeout
+	player.position.x = reflected_x
+	player.input_locked = false
+	s03_busy = false
+	objective_label.text = "从对面那扇门出去"
+	_show_dialogue("蓝湖：出口在对面。他一直没说错。")
+
+func _try_toggle_s03_blue_lake() -> void:
+	if s03_busy:
+		return
+	if not s03_eye_lit:
+		_show_dialogue("蓝湖：太暗了，我也看不清。先找到光。")
+		return
+	if not blue_lake_active and not blue_lake_transform_completed:
+		player.input_locked = true
+		_hide_space_prompt()
+		_show_dialogue("蓝湖：看。")
+		blue_lake_transform.play()
+		return
+	blue_lake_active = not blue_lake_active
+	chalk_cursor.set_active(blue_lake_active)
+	visual_mode = "Chalk Interaction" if blue_lake_active else "Standard"
+	if not blue_lake_active and s03_pov_active:
+		_s03_end_pov()
+	_show_dialogue("蓝湖：" + ("把粉笔移到维纳斯的眼睛上，点左键。" if blue_lake_active else "……先收起来。"))
+	_update_ui()
 	queue_redraw()
 
 func _try_s03_chalk_interaction() -> void:
-	if chalk_hover_target != "Mirror" or s03_mirror_intervened:
+	if s03_pov_active:
+		_s03_advance_pov()
 		return
-	s03_mirror_intervened = true
-	_hide_space_prompt()
-	blue_lake_active = false
-	chalk_cursor.set_active(false)
-	visual_mode = "Mirror Layer"
-	chapter_state.mark_event(&"s03_mirror_structure_revealed")
-	# The chalk copies the mirrored door onto the real left wall, which now lets Graham through.
-	if is_instance_valid(west_exit_body):
-		west_exit_body.collision_layer = 0
-		west_exit_body.collision_mask = 0
-	_show_dialogue("格雷汉：也许要相信镜子里的，而不是眼睛看到的。\nBlue Lake：反过来走？")
-	objective_label.text = "背对镜子，走到最左边的墙"
-	_update_ui()
+	if chalk_hover_target != "VenusEye":
+		return
+	s03_pov_active = true
+	s03_pov_line = -1
+	s03_pov_timer = 0.0
+	player.input_locked = true
+	player.visible = false          # inside her view Graham is the small figure far below
+	chapter_state.mark_event(&"s03_venus_pov_borrowed")
+	_s03_advance_pov()
+
+func _s03_advance_pov() -> void:
+	s03_pov_line += 1
+	s03_pov_timer = 0.0
+	if s03_pov_line >= S03_POV_LINES.size():
+		_show_dialogue("蓝湖：……那个保安举着的，是她的手。另一只，在对面那盆树里。\n按 Space 收起蓝湖。")
+		return
+	if s03_pov_line == 1:
+		s03_hands_seen = true
+		chapter_state.mark_event(&"s03_hands_seen")
+		_s03_update_objective()
+	_show_dialogue(S03_POV_LINES[s03_pov_line])
+
+func _s03_end_pov() -> void:
+	s03_pov_active = false
+	player.input_locked = false
+	player.visible = true
 	queue_redraw()
+
+## E the guard once Venus's view has shown whose hand he holds: the glove comes off, he tells his story,
+## and for the first time in years he walks — to Venus, holding her marble arm out for Graham to fit.
+func _s03_guard_brings_arm() -> void:
+	s03_busy = true
+	player.input_locked = true
+	s03_glove_off = true
+	chapter_state.mark_event(&"s03_glove_removed")
+	_show_dialogue("格雷汉：那不是你的手吧？\n她帮保安摘下手套。手套里是大理石。")
+	await get_tree().create_timer(2.8).timeout
+	_show_dialogue("保安：开幕那天，她的手臂断了。馆长说，看好展品。\n……我就一直举着。")
+	await get_tree().create_timer(2.8).timeout
+	_show_dialogue("保安第一次走动。")
+	s03_guard_walking = true
+	while s03_guard_x < S03_GUARD_AT_VENUS:
+		await get_tree().process_frame
+		s03_guard_x = minf(s03_guard_x + get_process_delta_time() * 140.0, S03_GUARD_AT_VENUS)
+	s03_guard_walking = false
+	s03_left_arm_ready = true
+	chapter_state.mark_event(&"s03_marble_arm_brought")
+	_show_dialogue("保安把手臂递到维纳斯身旁，等着。\n格雷汉：我来装。")
+	_s03_update_objective()
+	player.input_locked = false
+	s03_busy = false
+
+## Graham fits whichever arms have reached the middle. Both in place: Venus raises the mirror.
+func _s03_install_arms() -> void:
+	var fitted := ""
+	if s03_left_arm_ready and not s03_left_installed:
+		s03_left_installed = true
+		chapter_state.mark_event(&"s03_marble_arm_installed")
+		fitted += "格雷汉把大理石手臂接回维纳斯大理石的那一侧。"
+	if s03_right_arm_ready and not s03_right_installed:
+		s03_right_installed = true
+		chapter_state.mark_event(&"s03_iron_arm_installed")
+		if fitted != "":
+			fitted += "\n"
+		fitted += "她越过中线伸出手——指尖碰到镜子，凉的——把锈铁手臂接回锈的那一侧。"
+	if s03_left_installed and s03_right_installed:
+		s03_arms_returned = true
+		chapter_state.mark_event(&"s03_arms_returned")
+		_s03_mirror_appears(fitted)
+	else:
+		_show_dialogue(fitted + "\n" + ("另一只还在对面。" if s03_left_installed else "还差保安举着的那一只。"))
+		_s03_update_objective()
+
+func _s03_mirror_appears(fitted: String) -> void:
+	s03_busy = true
+	player.input_locked = true
+	_show_dialogue(fitted)
+	await get_tree().create_timer(2.8).timeout
+	s03_mirror_held = true
+	chapter_state.mark_event(&"s03_mirror_held")
+	chapter_state.learn(&"s03_visual_is_not_reality")
+	_show_dialogue("维纳斯托起了一面镜子。\n那面看不见的镜子，一直在等她的手。")
+	await get_tree().create_timer(2.8).timeout
+	_show_dialogue("蓝湖：镜子里有你。\n……对面那扇门，你的倒影够得着吗？")
+	objective_label.text = "让镜子里的你站到对面那扇门前"
+	player.input_locked = false
+	s03_busy = false
+
+func _s03_update_objective() -> void:
+	if s03_mirror_held:
+		return
+	var need: Array[String] = []
+	if not s03_left_arm_ready:
+		need.append("保安举着的那只")
+	if not s03_right_arm_ready:
+		need.append("对面那盆树里的那只")
+	if need.is_empty():
+		objective_label.text = "在维纳斯身边装上手臂"
+	else:
+		objective_label.text = "把手臂带回维纳斯身边：" + "、".join(need)
+
+## Things on the 里 side that Blue Lake can reach while the belt carries it (x, radius).
+func _s03_ride_items() -> Array[Dictionary]:
+	var items: Array[Dictionary] = [
+		{"name":"FarDoorTag", "x":_s02_mx(S02_DOOR_RECT.get_center().x), "radius":34.0},
+		{"name":"SkeletonPainting", "x":_s02_mx(330.0), "radius":45.0}
+	]
+	if not s03_pot_on_belt:
+		items.append({"name":"BonsaiPot", "x":s03_pot_x, "radius":40.0})
+	return items
+
+func _s03_nearest_ride_item() -> Dictionary:
+	var nearest: Dictionary = {}
+	var best := 99999.0
+	for item in _s03_ride_items():
+		var d := absf(s03_ride_x - float(item.x))
+		if d < float(item.radius) and d < best:
+			best = d
+			nearest = item
+	return nearest
+
+func _s03_ride_interact() -> void:
+	var item := _s03_nearest_ride_item()
+	if item.is_empty():
+		return
+	var n: String = item.name
+	if n == "FarDoorTag":
+		chapter_state.mark_event(&"s03_graham_tag_read")
+		_show_dialogue("蓝湖：门把手上挂着一张资产标签。\n“No.0779 修理工 格雷汉·斯蒂尔”。")
+	elif n == "SkeletonPainting":
+		_show_dialogue("蓝湖：骷髅也在看水。\n它的水里映着的，是那个少年。")
+	elif n == "BonsaiPot":
+		s03_pot_on_belt = true
+		chapter_state.mark_event(&"s03_bonsai_pushed")
+		_show_dialogue("蓝湖用力一推，那盆树滑上了传送带。\n锈铁叶子沙沙作响，和它一起往中间去。")
+
+func _s03_start_ride() -> void:
+	s03_ride_active = true
+	s03_ride_x = _s02_mx(player.position.x)
+	s02_figure_alpha = 1.0
+	player.input_locked = true
+	chapter_state.mark_event(&"s03_blue_lake_ride")
+	_show_dialogue("蓝湖：……我在对面。\n传送带推着我往中间走。经过什么的时候，按 E。")
+
+func _s03_end_ride() -> void:
+	s03_ride_active = false
+	s02_figure_alpha = 0.0
+	s02_idle_time = 0.0
+	player.input_locked = false
+	if s03_pot_on_belt:
+		s03_ride_done = true
+		_show_dialogue("蓝湖：我只能走到这里。门那边，我出不去。\n剩下的，交给你。")
+	else:
+		_show_dialogue("蓝湖：……那盆树过去了。\n再让我站到门口试一次。")
+
+func _update_s03(delta: float) -> void:
+	if not s03_active:
+		return
+	if s03_pov_active:
+		s03_pov_timer += delta
+		if s03_pov_timer >= 3.0 and s03_pov_line < S03_POV_LINES.size():
+			_s03_advance_pov()
+	# Standing at the entrance puts the reflection — Blue Lake — at the far door. Once Graham knows
+	# whose arm the bonsai holds, the belt carries Blue Lake through the 里 side toward the middle.
+	if not s03_ride_active and not s03_ride_done and s03_hands_seen and not s03_mirror_held and not s03_busy \
+			and not blue_lake_active and s02_figure_alpha >= 0.95 \
+			and absf(_s02_mx(player.position.x) - _s02_mx(S02_DOOR_RECT.get_center().x)) <= 30.0:
+		_s03_start_ride()
+	if s03_ride_active:
+		s03_ride_x -= S03_RIDE_SPEED * delta
+		if s03_ride_x <= S02_AXIS_X + 24.0:
+			_s03_end_ride()
+	if s03_pot_on_belt and s03_pot_x > S03_POT_STOP:
+		s03_pot_x = maxf(s03_pot_x - S03_RIDE_SPEED * delta, S03_POT_STOP)
+		if s03_pot_x <= S03_POT_STOP and not s03_leaves_fallen:
+			# Stopped by the chain, in the warm light from Venus's eye: the rust leaves let go.
+			s03_leaves_fallen = true
+			s03_right_arm_ready = true
+			chapter_state.mark_event(&"s03_rust_leaves_fallen")
+			_s03_update_objective()
+			if not s03_ride_active:
+				_show_dialogue("暖光照在锈铁叶子上。叶子一片片落下，铁丝松开了。\n锈铁手臂露了出来。")
 
 func _try_s04_interact() -> void:
 	if not s04_active or scene_state != "gallery" or transition_started:
@@ -1913,8 +2828,8 @@ func _enter_s04_after_s03() -> void:
 	s04_lights_off = false
 	s04_visitor_recognized = false
 	s04_visitor_moved = false
-	# Through the chalk door Graham steps in at the right wall, walking left.
-	player.position.x = 975.0
+	# Through the 里 door of the second hall Graham steps in at the left wall, walking right.
+	player.position.x = 100.0
 	chapter_state.advance_to(ChapterState.Slice.S04_VISITOR)
 	chapter_state.set_map_state(&"Museum_S04_Visitor")
 	chapter_state.set_player_goal(&"recognize_the_visitor")
@@ -1923,41 +2838,6 @@ func _enter_s04_after_s03() -> void:
 	_show_dialogue("Blue Lake：你刚才相信了一个眼睛看不到的东西。")
 	_update_ui()
 	queue_redraw()
-
-func _update_s02_loop_trigger() -> void:
-	if not s02_active or s02_loop_triggered or scene_state != "gallery" or transition_started:
-		return
-	if not chapter_state.has_event(&"s02_guard_observed"):
-		return
-	# Walking on past the sculptures toward the dead end (x >= 945) loops back to the entrance.
-	if absf(player.position.x - 975.0) > 30.0:
-		return
-	s02_loop_triggered = true
-	s02_loop_count += 1
-	player.position.x = 120.0
-	if s02_loop_count == 1:
-		_show_dialogue("格雷汉：……这里是入口。\n我们是不是走回来了？")
-	else:
-		_show_dialogue("格雷汉：又回来了。保安刚才说的还是同一句。\n蓝湖：这已经不是普通的迷路了。")
-		_try_complete_s02()
-	await get_tree().create_timer(0.8).timeout
-	s02_loop_triggered = false
-
-func _try_complete_s02() -> void:
-	if s02_completion_started:
-		return
-	if s02_loop_count < 2:
-		return
-	if not chapter_state.has_event(&"s02_guard_observed"):
-		return
-	s02_completion_started = true
-	chapter_state.mark_event(&"s02_space_loop_recognized")
-	chapter_state.learn(&"s02_space_has_a_problem")
-	chapter_state.set_player_goal(&"understand_the_space")
-	chapter_state.complete_slice(ChapterState.Slice.S02_LOST)
-	objective_label.text = "这里的空间有问题。"
-	_update_ui()
-	_enter_s03_after_s02()
 
 func _update_route_transitions() -> void:
 	if not player or scene_state != "gallery":
@@ -1973,11 +2853,9 @@ func _update_route_transitions() -> void:
 			player.position.x = 985.0
 			queue_redraw()
 		return
-	# PDF puzzle 1: turn your back on the mirror and walk through the wall that has no door.
-	if s03_active and s03_mirror_intervened and not s03_mirror_crossed and player.position.x <= 50.0:
-		s03_mirror_crossed = true
-		chapter_state.mark_event(&"s03_mirror_crossed")
-		chapter_state.learn(&"s03_visual_is_not_reality")
+	# S03: after trading places with her reflection, Graham leaves by the far (里) door on the right.
+	if s03_active and s03_crossed and player.position.x >= 1005.0:
+		chapter_state.mark_event(&"s03_exit_far_door")
 		chapter_state.complete_slice(ChapterState.Slice.S03_MIRROR)
 		_enter_s04_after_s03()
 
@@ -1986,18 +2864,35 @@ func _enter_s03_after_s02() -> void:
 		return
 	s02_active = false
 	s03_active = true
-	s03_mirror_observed = false
-	s03_mirror_intervened = false
+	s03_busy = false
+	s03_lamp_fixed = false
+	s03_lamp_angle = 0
+	s03_eye_lit = false
+	s03_pov_active = false
+	s03_hands_seen = false
+	s03_glove_off = false
+	s03_guard_x = S02_GUARD_X
+	s03_arms_returned = false
+	s03_mirror_held = false
+	s03_crossed = false
+	s03_ride_active = false
+	s03_ride_done = false
+	s03_pot_x = S03_POT_START
+	s03_pot_on_belt = false
+	s03_leaves_fallen = false
+	s03_left_arm_ready = false
+	s03_right_arm_ready = false
+	s03_left_installed = false
+	s03_right_installed = false
 	blue_lake_active = false
 	blue_lake_transform_completed = false
 	chalk_cursor.set_active(false)
 	chapter_state.advance_to(ChapterState.Slice.S03_MIRROR)
 	chapter_state.set_map_state(&"Museum_S03_Mirror")
-	chapter_state.set_player_goal(&"observe_the_mirror")
+	chapter_state.set_player_goal(&"find_the_light")
 	chapter_state.mark_story_event(&"s03_started")
-	player.position.x = 120.0
-	objective_label.text = "观察镜子"
-	_show_dialogue("蓝湖：\n我们又回到了这里。\n……看镜子。")
+	objective_label.text = "找到光"
+	_show_dialogue("蓝湖：太暗了，什么都看不清。\n……先找到光。")
 	_update_ui()
 	queue_redraw()
 
@@ -2015,6 +2910,8 @@ func _get_nearest_s03_interactable() -> Dictionary:
 	var nearest: Dictionary = {}
 	var best := 99999.0
 	for item in s03_interactables:
+		if item.name == "SecurityGuard":
+			item["position"] = Vector2(s03_guard_x, item.position.y)
 		var distance: float = absf(player.position.x - item.position.x)
 		if distance < item.radius and distance < best:
 			best = distance
@@ -2246,6 +3143,15 @@ func _update_interaction_hint() -> void:
 		interaction_hint_label.position = get_viewport().get_mouse_position() + Vector2(14, -22)
 		interaction_hint_label.show()
 		return
+	if s03_active and s03_ride_active:
+		var ride_item := _s03_nearest_ride_item()
+		if ride_item.is_empty():
+			interaction_hint_label.hide()
+		else:
+			interaction_hint_label.text = "E 推" if ride_item.name == "BonsaiPot" else "E 看"
+			interaction_hint_label.position = Vector2(s03_ride_x - 20.0, 398.0)
+			interaction_hint_label.show()
+		return
 	if space_prompt_visible:
 		interaction_hint_label.text = "SPACE  使用蓝湖"
 		interaction_hint_label.position = Vector2(500, 455)
@@ -2266,6 +3172,16 @@ func _update_interaction_hint() -> void:
 			interaction_hint_label.text = "E 进门"
 		elif n == "ExitDoor" and s01_key_on_hook:
 			interaction_hint_label.text = "E 取钥匙开门"
+	if s03_active:
+		var n3: String = nearest.get("name", "")
+		if n3 == "PictureLamp" and not s03_eye_lit:
+			interaction_hint_label.text = "E 调角度" if s03_lamp_fixed else "E 修灯"
+		elif n3 == "SecurityGuard" and s03_hands_seen and not s03_glove_off:
+			interaction_hint_label.text = "E 那不是你的手吧"
+		elif n3 == "SculptureVenus" and ((s03_left_arm_ready and not s03_left_installed) or (s03_right_arm_ready and not s03_right_installed)):
+			interaction_hint_label.text = "E 装上手臂"
+		elif n3 == "HallDoor" and s03_mirror_held and not s03_crossed:
+			interaction_hint_label.text = "E 推门"
 	if s04_active and nearest.get("name", "") == "Restorer" and s04_restorer_observed and not s04_pigment_borrowed:
 		interaction_hint_label.text = "E 借荧光剂"
 	elif s04_active and nearest.get("name", "") == "PigmentStation":
@@ -2283,8 +3199,8 @@ func _update_chalk_hover() -> void:
 		return
 	var mouse_position := get_viewport().get_mouse_position()
 	if S03_ENABLED and s03_active:
-		if not s03_mirror_intervened and mouse_position.distance_to(S03_MIRROR_CENTER) <= 55.0:
-			chalk_hover_target = "Mirror"
+		if s03_eye_lit and not s03_pov_active and mouse_position.distance_to(S02_EYE) <= 30.0:
+			chalk_hover_target = "VenusEye"
 	elif S04_ENABLED and s04_active:
 		if s04_pigment_applied and not s04_lamp_observed and mouse_position.distance_to(S04_LAMP_CENTER) <= 40.0:
 			chalk_hover_target = "Lamp"

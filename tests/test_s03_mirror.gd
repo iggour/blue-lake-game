@@ -1,7 +1,12 @@
 extends SceneTree
 
-## S03 walkthrough with real input: the left wall is solid at first; E on the dead-end mirror
-## asks for Space; Space + Chalk click on the mirror; then walking left through the wall reaches S04.
+## S03 walkthrough with real input, in the dark 表与里 hall:
+## fix the picture lamp over 《那喀索斯》 and turn it until the water reflects into the prism (Venus's eye lights);
+## Space + Chalk on her eye borrows her view (the guard's and the bonsai's hands fit her shoulders);
+## E the guard: the glove comes off and he brings the marble arm; stand at the entrance so the reflection (Blue Lake)
+## stands at the far door and rides the belt through the 里 side, pushing the bonsai onto the belt (E);
+## in the warm light the rust leaves fall; Graham fits both arms; Venus holds the mirror;
+## stand at the entrance so the reflection stands at the far door, E the door, leave right into S04.
 ##
 ## Headless:      "$G" --headless --path . --script tests/test_s03_mirror.gd
 ## With a window: "$G" --path . --script tests/test_s03_mirror.gd   (screenshots -> .artifacts/screenshots/)
@@ -19,56 +24,159 @@ func _run() -> void:
 	main = MainScene.instantiate()
 	root.add_child(main)
 	await _frames(5)
-	# Arrive in S03 the way S02's second loop hands off.
+	# Arrive in S03 the way S02 hands off: same hall, still dark, near the guard.
 	main.s01_gate_open = true
 	main.gate_body.collision_layer = 0
 	main.s01_active = false
+	main.s01_exit_route = "past"
 	main.chapter_state.complete_slice(ChapterState.Slice.S01_ENTER)
 	main.chapter_state.complete_slice(ChapterState.Slice.S02_LOST)
+	main.player.position.x = 190.0
 	main._enter_s03_after_s02()
 	await _frames(2)
 	_check(main.s03_active, "S03 is active")
-	_check(absf(main.player.position.x - 120.0) < 1.0, "S03 starts at the hall entrance")
+	_check(main._s02_darkness() > 0.5, "the hall is dark")
+	await _shot("s03_1_dark")
 
-	# Before the mirror is solved the left wall is solid.
-	await _walk_to_x(0.0)
-	_check(main.player.position.x > 50.0, "left wall blocks before the mirror (x=%d)" % main.player.position.x)
-	_check(main.s03_active, "still in S03")
-
-	await _walk_to_x(260.0)
-	await _press_e_expecting("MirrorInMirror")
-	_check(main.dialogue_label.text.contains("镜中镜"), "hall exhibits still answer E in S03")
-	await _walk_to_x(545.0)
-	await _press_e_expecting("SecurityGuard")
-
-	await _walk_to_x(983.0)
-	await _press_e_expecting("Mirror")
-	_check(main.s03_mirror_observed, "E observes the mirror")
-	_check(main.dialogue_label.text.contains("Space"), "mirror dialogue tells you to press Space")
+	# Space does nothing useful in the dark.
+	await _press("blue_lake")
 	await _frames(2)
-	_check(main.interaction_hint_label.visible and main.interaction_hint_label.text.contains("SPACE"), "SPACE prompt is shown")
-	await _shot("s03_1_mirror")
+	_check(not main.blue_lake_active, "no Blue Lake before there is light")
+	_check(main.dialogue_label.text.contains("光"), "Blue Lake asks for light")
+
+	# The belt still runs: Graham cannot cross the axis.
+	await _hold("move_right", 200)
+	_check(main.player.position.x < main.S02_AXIS_X + 4.0, "the belt still holds Graham back (x=%d)" % main.player.position.x)
+
+	await _walk_to_x(main.S03_PICTURE_LAMP.x)
+	await _press_e_expecting("PictureLamp")
+	_check(main.s03_lamp_fixed, "E fixes the picture lamp")
+	_check(not main.s03_eye_lit, "fixing alone does not light the eye")
+	await _press_e_expecting("PictureLamp")
+	await _shot("s03_2_lamp_wrong_angle")
+	_check(not main.s03_eye_lit, "a wrong angle misses the prism")
+	await _press_e_expecting("PictureLamp")
+	_check(not main.s03_eye_lit, "another wrong angle misses the prism")
+	await _press_e_expecting("PictureLamp")
+	_check(main.s03_eye_lit, "the right angle reflects off the water into the prism")
+	var end: Vector2 = main._s03_reflection_end(main.S03_LAMP_GOOD)
+	_check(absf(end.x - main.S02_AXIS_X) <= main.S02_LIGHT_HALF, "the good reflection really reaches the prism (x=%d)" % end.x)
+	for i in range(main.S03_LAMP_GOOD):
+		var miss: Vector2 = main._s03_reflection_end(i)
+		_check(absf(miss.x - main.S02_AXIS_X) > main.S02_LIGHT_HALF, "angle %d really misses (x=%d)" % [i, miss.x])
+	await create_timer(3.2).timeout
+	await _shot("s03_3_eye_lit")
 
 	await _press("blue_lake")
-	await main.blue_lake_transform.finished
+	for i in range(80):
+		await create_timer(0.1).timeout
+		if main.blue_lake_active:
+			break
 	await _frames(2)
-	_check(main.blue_lake_active, "Space enters Blue Lake")
-	_check(main.dialogue_label.text.contains("左键"), "Blue Lake tells you to left-click the mirror")
+	_check(main.blue_lake_active, "Space enters Blue Lake once the eye is lit")
+	await _shot("s03_4_blue_lake_layer")
 	if DisplayServer.get_name() == "headless":
-		main.chalk_hover_target = "Mirror"
+		main.chalk_hover_target = "VenusEye"
 		main._try_s03_chalk_interaction()
 	else:
-		await _move_mouse(main.S03_MIRROR_CENTER)
-		_check(main.chalk_hover_target == "Mirror", "Chalk hovers the mirror")
-		await _shot("s03_2_blue_lake")
+		await _move_mouse(main.S02_EYE)
+		_check(main.chalk_hover_target == "VenusEye", "Chalk hovers Venus's eye")
 		await _click()
-	_check(main.s03_mirror_intervened, "Chalk click reveals the mirrored door")
+	_check(main.s03_pov_active, "Chalk on her eye borrows Venus's view")
+	_check(not main.player.visible, "Graham's sprite is hidden inside Venus's view")
+	await create_timer(3.3).timeout
+	_check(main.s03_hands_seen, "in her view the hands fit her shoulders")
+	await _shot("s03_5_venus_pov")
+	# Clicking advances the overheard conversation.
+	for i in range(main.S03_POV_LINES.size()):
+		main._try_s03_chalk_interaction()
+		await _frames(1)
+	_check(main.dialogue_label.text.contains("Space"), "after the conversation Blue Lake says to put it away")
+	await _press("blue_lake")
 	await _frames(2)
-	await _shot("s03_3_chalk_door")
+	_check(not main.blue_lake_active and not main.s03_pov_active, "Space leaves Blue Lake and her view")
+	_check(main.player.visible, "Graham is visible again after her view")
 
-	await _walk_to_x(0.0)
-	_check(main.s04_active, "walking left through the wall reaches S04")
+	await _walk_to_x(main.S02_GUARD_X)
+	await _press_e_expecting("SecurityGuard")
+	_check(main.s03_glove_off, "the glove comes off")
+	await _shot("s03_6_glove")
+	for i in range(100):
+		await create_timer(0.1).timeout
+		if main.s03_left_arm_ready and not main.s03_busy:
+			break
+	_check(main.s03_left_arm_ready, "the guard brings the marble arm to Venus")
+	_check(not main.s03_left_installed, "but Graham fits it herself")
+
+	# Stand still at the entrance: the reflection at the far door is Blue Lake, and the belt carries it.
+	await _walk_to_x(main.S02_DOOR_RECT.get_center().x)
+	# First ride: let the bonsai go by. Blue Lake stops in the middle and can try again.
+	for i in range(100):
+		await create_timer(0.1).timeout
+		if main.s03_ride_active:
+			break
+	_check(main.s03_ride_active, "first ride starts")
+	for i in range(200):
+		await create_timer(0.1).timeout
+		if not main.s03_ride_active:
+			break
+	_check(not main.s03_pot_on_belt and not main.s03_ride_done, "missing the bonsai leaves it in place")
+	_check(main.dialogue_label.text.contains("再"), "Blue Lake offers to try again")
+	_check(not main.player.input_locked, "Graham can move again after the ride")
+	for i in range(100):
+		await create_timer(0.1).timeout
+		if main.s03_ride_active:
+			break
+	_check(main.s03_ride_active, "standing at the entrance sends Blue Lake riding through the 里 side")
+	_check(absf(main.s03_ride_x - main._s02_mx(main.S02_DOOR_RECT.get_center().x)) < 40.0, "the ride starts at the far door")
+	await _press("interact")
+	_check(main.dialogue_label.text.contains("格雷汉"), "the far door carries an inventory tag with Graham's name")
+	await _shot("s03_7_ride_start")
+	for i in range(100):
+		await create_timer(0.05).timeout
+		if absf(main.s03_ride_x - main.s03_pot_x) < 20.0:
+			break
+	await _press("interact")
+	_check(main.s03_pot_on_belt, "E as Blue Lake passes pushes the bonsai onto the belt")
+	await _shot("s03_8_pot_pushed")
+	for i in range(200):
+		await create_timer(0.1).timeout
+		if not main.s03_ride_active:
+			break
+	_check(not main.s03_ride_active and main.s03_ride_done, "the ride ends in the middle; Blue Lake cannot leave by the far door")
+	for i in range(100):
+		await create_timer(0.1).timeout
+		if main.s03_leaves_fallen:
+			break
+	_check(main.s03_leaves_fallen and main.s03_right_arm_ready, "in the warm light the rust leaves fall and free the iron arm")
+	_check(absf(main.s03_pot_x - main.S03_POT_STOP) < 1.0, "the chain stops the pot in the warm light")
+	await _shot("s03_9_leaves_fallen")
+
+	await _walk_to_x(538.0)
+	await _press_e_expecting("SculptureVenus")
+	_check(main.s03_left_installed and main.s03_right_installed, "Graham fits both arms in the middle")
+	for i in range(100):
+		await create_timer(0.1).timeout
+		if main.s03_mirror_held and not main.s03_busy:
+			break
+	_check(main.s03_mirror_held, "Venus holds the mirror")
+	await _shot("s03_10_mirror_held")
+
+	# Not at the door yet: the reflection is not at the far door.
+	await _walk_to_x(300.0)
+	await _walk_to_x(main.S02_DOOR_RECT.get_center().x)
+	await _shot("s03_11_reflection_at_door")
+	await _press_e_expecting("HallDoor")
+	await create_timer(1.9).timeout
+	_check(main.s03_crossed, "E the door with the reflection at the far door: Graham trades places")
+	_check(main.player.position.x > 900.0, "Graham now stands at the far door (x=%d)" % main.player.position.x)
+	_check(main.player.push_x == 0.0, "the belt has stopped")
+	await _shot("s03_12_crossed")
+	await _walk_to_x(1050.0)
+	_check(main.s04_active, "leaving by the far door reaches S04")
+	_check(main.player.position.x < 200.0, "S04 is entered from the left (x=%d)" % main.player.position.x)
 	_check(main.chapter_state.is_slice_completed(ChapterState.Slice.S03_MIRROR), "S03 completed")
+	await _shot("s03_13_s04_left")
 
 	if failures.is_empty():
 		print("TEST PASS: S03")

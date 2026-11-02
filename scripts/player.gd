@@ -6,6 +6,8 @@ class_name GrahamSteel
 @export var ground_y := 520.0
 @export var ground_top := 410.0
 var input_locked := false
+# Set by the room (S02's conveyor belt): added to the walking velocity every physics frame.
+var push_x := 0.0
 
 func _ready() -> void:
 	var shape := CollisionShape2D.new()
@@ -23,6 +25,7 @@ func _physics_process(_delta: float) -> void:
 		# but the player cannot walk upward into the walls or artwork.
 		var direction := Input.get_vector("move_left", "move_right", "move_up", "move_down")
 		velocity = direction * speed
+		velocity.x += push_x
 	move_and_slide()
 	global_position.x = clamp(global_position.x, 0.0, 1120.0)
 	global_position.y = clamp(global_position.y, ground_top, ground_y)
