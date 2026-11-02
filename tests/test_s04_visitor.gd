@@ -110,6 +110,8 @@ func _run() -> void:
 	_check(main.s04_riboflavin_applied, "E bench: riboflavin applied")
 	await _press_e_at("Workbench")
 	_check(main.s04_uv_on, "E bench: ultraviolet on")
+	await _press_e_at("Window")
+	_check(main.chapter_state.has_event(&"s04_blue_handprint_seen"), "bright + UV: E 《窗》 shows the blue handprint in the blind spot")
 	await _press_action("blue_lake")
 	await _frames(2)
 	await _chalk("S04Window")   # mid

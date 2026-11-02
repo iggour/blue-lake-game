@@ -1333,6 +1333,15 @@ func _draw_s04_window() -> void:
 		# The patch she painted over glows; the handle shows through as a dark shape.
 		draw_rect(Rect2(w.x + 24.0, w.y - 14.0, 18, 28), Color(0.78, 1.0, 0.35, 0.75), true)
 		draw_rect(Rect2(w.x + 30.0, w.y - 9.0, 6, 18), Color(0.2, 0.3, 0.15, 0.8), true)
+	if s04_uv_on:
+		# The blind spot: in the middle of the pupil, where nobody looks, a blue handprint
+		# (Blue Lake's colour). Only ultraviolet shows it.
+		var bp := w + Vector2(-4, -22)
+		var blue := Color(0.0, 0.47, 0.84, 0.85)
+		draw_circle(bp + Vector2(0, 6), 8.0, blue)
+		for k in range(4):
+			draw_line(bp + Vector2(-6 + k * 4.0, 0), bp + Vector2(-8 + k * 5.0, -11 + absf(k - 1.5) * 2.0), blue, 3.0)
+		draw_line(bp + Vector2(7, 6), bp + Vector2(13, 0), blue, 3.0)
 	if s04_uv_on and s04_girl_caught:
 		# A small handprint, pressed onto the glass.
 		draw_circle(w + Vector2(-18, 18), 6.0, Color(0.78, 1.0, 0.35, 0.6))
@@ -2680,6 +2689,9 @@ func _s04_look_at_window() -> void:
 		chapter_state.mark_event(&"s04_window_handle_found")
 		_show_dialogue("紫外灯下，《窗》边上一块黄颜料亮了起来。\n下面原本画着一个把手。是她涂掉的。")
 		_s04_check_complete()
+	elif s04_uv_on and not chapter_state.has_event(&"s04_blue_handprint_seen"):
+		chapter_state.mark_event(&"s04_blue_handprint_seen")
+		_show_dialogue("紫外灯下，《窗》的正中间有一个蓝色的手印。\n比少女的手大。……一直在那里，只是谁也没看见。")
 	elif s04_girl_caught and not s04_frame_installed:
 		s04_frame_installed = true
 		chapter_state.mark_event(&"s04_window_frame_installed")
