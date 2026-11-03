@@ -89,6 +89,20 @@ const S04_TWINS_X := 880.0
 const S04_LINE_TIME := 3.6
 # 《窗》 hangs on the wall here in S04 and S05 (same room, same painting).
 const S05_WINDOW_CENTER := Vector2(590, 285)
+# S05 hall behind 《窗》: the visual-sensor iteration exhibition, with depth. One-point perspective:
+# z = 0 at the near floor edge, z = 1 at the far wall; things shrink toward the vanishing point.
+const S05_NEAR_Y := 520.0
+const S05_FAR_Y := 300.0
+const S05_FAR_SCALE := 0.5
+const S05_VP := Vector2(560, 80)
+const S05_RAIL_X := 560.0          # the old lens slides along a rail on the floor, in depth
+const S05_RAIL_Z0 := 0.12
+const S05_RAIL_STEP := 0.15
+const S05_RAIL_NOTCHES := 6
+const S05_FOCUS_NOTCH := 2         # where the lens brings the chart's last row into focus
+const S05_CLEANER_X := 950.0       # near-plane x; he stands on a ladder by the chart at the far wall
+const S05_CLEANER_Z := 0.95
+const S05_LAST_ROW_GAPS := [1, 3, 0, 2]   # Landolt C gaps: 0 right, 1 down, 2 left, 3 up; the fifth cell is "empty"
 # S06 central platform room: the empty 《看见》 plinth, 《凝视》's mechanical eye, and the back of 《窗》.
 const S06_PLATFORM_CENTER := Vector2(560, 282)
 const S06_GAZE_EYE := Vector2(330, 290)
@@ -186,10 +200,22 @@ var s04_lines: Array = []            # queued dialogue lines (advance by time or
 var s04_line_timer := 0.0
 var s04_interactables: Array[Dictionary] = []
 var s05_active := false
+var s05_room := "window"           # "window": still in front of 《窗》 in the S04 room; "hall": behind it
 var s05_window_observed := false
-var s05_window_handle_found := false
+var s05_window_handle_found := false   # kept for S07/S08 code that still reads it
 var s05_window_open := false
+var s05_enter_anim := -1.0         # 0..1 while the painting's landscape grows into the hall
+var s05_labeled := false           # the cleaner tagged Graham as a small exhibit, from afar
+var s05_cleaner_met := false
+var s05_lens_notch := 1
+var s05_lens_clean := false
+var s05_view := ""                 # "" / "lens" / "aiws": looking through something
+var s05_cell_seen := false
+var s05_finish_pending := false
+var s05_lines: Array = []
+var s05_line_timer := 0.0
 var s05_interactables: Array[Dictionary] = []
+var s05_hall_items: Array[Dictionary] = []
 var s06_active := false
 var s06_platform_observed := false
 var s06_sensor_revealed := false
@@ -277,6 +303,7 @@ func _process(delta: float) -> void:
 	_update_s02(delta)
 	_update_s03(delta)
 	_update_s04(delta)
+	_update_s05(delta)
 	_update_route_transitions()
 	if s06_chase_active and s06_active and scene_state == "gallery" and player:
 		s06_guard_chase_x = move_toward(s06_guard_chase_x, player.position.x - 44.0, delta * 105.0)
@@ -438,6 +465,19 @@ func _build_gallery() -> void:
 	]
 	s05_interactables = [
 		{"name":"Window", "position":Vector2(590,440), "radius":60.0, "hint_y":376.0}
+	]
+	# S05 hall, in depth: x is the near-plane x, z the depth (0 near .. 1 far wall); r is the reach at z = 0.
+	s05_hall_items = [
+		{"name":"Eyepiece", "x":S05_RAIL_X, "z":0.02, "r":26.0, "draw":true},
+		{"name":"Lens", "x":S05_RAIL_X, "z":0.27, "r":30.0, "draw":true},
+		{"name":"CompoundEye", "x":200.0, "z":0.18, "r":40.0, "draw":true, "label":"样品 · 复眼"},
+		{"name":"AiwsSample", "x":930.0, "z":0.18, "r":40.0, "draw":true, "label":"样品 · 视物显大"},
+		{"name":"GazeStation", "x":320.0, "z":0.5, "r":40.0, "draw":true, "label":"测试处 ·《凝视》"},
+		{"name":"BlindStation", "x":800.0, "z":0.5, "r":40.0, "draw":true, "label":"测试处 ·《盲》"},
+		{"name":"Mural", "x":380.0, "z":0.98, "r":120.0},
+		{"name":"Chart", "x":803.0, "z":0.98, "r":50.0},
+		{"name":"Cleaner", "x":S05_CLEANER_X, "z":S05_CLEANER_Z, "r":40.0},
+		{"name":"Bucket", "x":1000.0, "z":0.9, "r":20.0}
 	]
 	s06_interactables = [
 		# Left to right: 《盲》, 《凝视》, the 《看见》 platform, and 《窗》 on the wall (where Graham came in).
@@ -1317,7 +1357,9 @@ func _draw_s04_window() -> void:
 	if s04_frame_installed:
 		draw_rect(Rect2(w.x - 53.0, w.y - 58.0, 106, 116), _s04_c(Color("#c7a56f")), false, 8.0)
 	# Bare canvas: the frame was taken off for restoration.
-	draw_rect(Rect2(w.x - 45.0, w.y - 50.0, 90, 100), Color(1.0, 0.9, 0.62).lerp(Color(0.55, 0.62, 0.72), s04_win_t * 0.6), true)
+	# Inside the painting: grass, sky, a road, and the red house at its end.
+	_draw_s05_landscape(Rect2(w.x - 45.0, w.y - 50.0, 90, 100))
+	draw_rect(Rect2(w.x - 45.0, w.y - 50.0, 90, 100), Color(1.0, 0.9, 0.62, 0.25).lerp(Color(0.2, 0.25, 0.35, 0.45), s04_win_t), true)
 	draw_line(Vector2(w.x, w.y - 50.0), Vector2(w.x, w.y + 50.0), _s04_c(Color("#8a6a4a")), 3.0)
 	draw_line(Vector2(w.x - 45.0, w.y - 5.0), Vector2(w.x + 45.0, w.y - 5.0), _s04_c(Color("#8a6a4a")), 3.0)
 	# The curtain: open at the sides (cone), half drawn (mid), closed (rod).
@@ -1479,31 +1521,399 @@ func _draw_s04_visitor(x: float, index: int, rod_a: float, now: float) -> void:
 		draw_rect(Rect2(x - 11 + sway + look * 0.5, 296 + k * 5.5, 22, 4), Color(0.6, 0.66, 0.74, a), true)
 	draw_circle(Vector2(x + sway + look, 310), 7.0, Color(0.7, 0.74, 0.8, a * 0.35))
 
+## --- S05 hall: depth helpers ------------------------------------------------------------------
+func _s05_scale(z: float) -> float:
+	return lerpf(1.0, S05_FAR_SCALE, clampf(z, 0.0, 1.0))
+
+func _s05_y(z: float) -> float:
+	return lerpf(S05_NEAR_Y, S05_FAR_Y, clampf(z, 0.0, 1.0))
+
+## Screen x of something standing at near-plane x `x`, depth `z`.
+func _s05_px(x: float, z: float) -> float:
+	return S05_VP.x + (x - S05_VP.x) * _s05_scale(z)
+
+func _s05_player_z() -> float:
+	if not player:
+		return 0.0
+	return clampf((S05_NEAR_Y - player.position.y) / (S05_NEAR_Y - S05_FAR_Y), 0.0, 1.0)
+
+func _s05_lens_z() -> float:
+	return S05_RAIL_Z0 + S05_RAIL_STEP * s05_lens_notch
+
+func _s05_set_depth_mode(on: bool) -> void:
+	if not player:
+		return
+	if on:
+		player.ground_top = S05_FAR_Y
+		player.ground_y = S05_NEAR_Y
+	else:
+		player.ground_top = 410.0
+		player.ground_y = 520.0
+		player.scale = Vector2.ONE
+
+## --- S05 drawing ------------------------------------------------------------------------------
 func _draw_s05_gallery() -> void:
-	# S05 is the first authored intervention: a painting becomes operable as a window.
-	# It is the same 《窗》 that hung between the visitor and the restorer in S04, on the wall.
-	var w := S05_WINDOW_CENTER
+	if s05_room == "hall":
+		_draw_s05_hall()
+		return
+	# Still in the 《窗》 room: the same painting, now with a frame and a handle.
 	_draw_s04_gallery()
-	var original_window_position := window_node.position
-	window_node.position = w
-	_draw_object(window_node, "Window", Color("#5ca8c7"), "《窗》")
-	window_node.position = original_window_position
-	if s05_window_observed and not s05_window_handle_found:
-		draw_string(ThemeDB.fallback_font, w + Vector2(75, -30), "它看起来像一幅画。", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color("#aab8c2"))
+	var w := S05_WINDOW_CENTER
+	if s05_window_observed and not s05_window_open:
+		draw_string(ThemeDB.fallback_font, w + Vector2(75, -30), "画里有一条路。", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color("#d6e8f0"))
 	if blue_lake_active and not s05_window_open:
 		var glow := 0.8 if chalk_hover_target == "Window" else 0.4
-		draw_circle(w, 66.0, Color(0.4, 0.85, 1.0, 0.11))
-		draw_arc(w, 66.0, 0.0, TAU, 32, Color(0.75, 0.91, 1.0, glow), 2.0)
-	if s05_window_handle_found and not s05_window_open:
-		draw_circle(w + Vector2(34, 0), 8.0, Color("#f6e5a7"))
-		draw_arc(w + Vector2(34, 0), 18.0, 0.0, TAU, 24, Color("#bfe8ff"), 2.0)
-		draw_string(ThemeDB.fallback_font, w + Vector2(75, -30), "把手显现了。", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color("#d6e8f0"))
-	if s05_window_open:
-		draw_rect(Rect2(w - Vector2(58, 58), Vector2(116, 116)), Color("#8cdcff"), true)
-		draw_rect(Rect2(w - Vector2(48, 48), Vector2(96, 96)), Color("#172c3c"), true)
-		draw_circle(w, 42.0, Color(0.25, 0.72, 0.95, 0.24))
-		draw_string(ThemeDB.fallback_font, w + Vector2(75, -30), "窗后的空间通向中央展台。", HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color("#bfe8ff"))
-		draw_string(ThemeDB.fallback_font, w + Vector2(75, -5), "这不是出口。", HORIZONTAL_ALIGNMENT_LEFT, -1, 17, Color("#f6e5a7"))
+		draw_arc(w + Vector2(34, 0), 16.0, 0.0, TAU, 20, Color(0.75, 0.91, 1.0, glow), 2.0)
+	if s05_enter_anim >= 0.0:
+		# The landscape inside the frame grows until it is the room Graham stands in.
+		var t := s05_enter_anim * s05_enter_anim
+		var r := Rect2(w - Vector2(45, 50), Vector2(90, 100))
+		var full := Rect2(0, 58, 1152, 590)
+		var g := Rect2(r.position.lerp(full.position, t), r.size.lerp(full.size, t))
+		_draw_s05_landscape(g)
+
+func _draw_s05_landscape(r: Rect2) -> void:
+	# Grass, sky, a road to the horizon, the red house at its end (the autorefractor picture).
+	var horizon := r.position.y + r.size.y * 0.55
+	draw_rect(Rect2(r.position, Vector2(r.size.x, horizon - r.position.y)), Color("#8fc3ea"), true)
+	draw_rect(Rect2(Vector2(r.position.x, horizon), Vector2(r.size.x, r.end.y - horizon)), Color("#6aa84f"), true)
+	var cx := r.position.x + r.size.x * 0.5
+	draw_colored_polygon(PackedVector2Array([Vector2(cx - r.size.x * 0.22, r.end.y), Vector2(cx + r.size.x * 0.22, r.end.y), Vector2(cx + 2.0, horizon), Vector2(cx - 2.0, horizon)]), Color("#c9b98d"))
+	var hw := maxf(r.size.x * 0.06, 4.0)
+	draw_rect(Rect2(cx - hw, horizon - hw * 1.1, hw * 2.0, hw * 1.1), Color("#c2402f"), true)
+	draw_colored_polygon(PackedVector2Array([Vector2(cx - hw * 1.3, horizon - hw * 1.1), Vector2(cx + hw * 1.3, horizon - hw * 1.1), Vector2(cx, horizon - hw * 2.0)]), Color("#7a2a22"))
+
+func _draw_s05_hall() -> void:
+	var far_l := _s05_px(84, 1.0)
+	var far_r := _s05_px(1020, 1.0)
+	var far_top := S05_VP.y + (58.0 - S05_VP.y) * S05_FAR_SCALE
+	# Room in one-point perspective: ceiling, side walls, floor, far wall.
+	draw_rect(Rect2(0, 58, 1152, 590), Color("#151c28"), true)
+	draw_colored_polygon(PackedVector2Array([Vector2(84, 58), Vector2(1020, 58), Vector2(far_r, far_top), Vector2(far_l, far_top)]), Color("#1d2735"))
+	draw_colored_polygon(PackedVector2Array([Vector2(84, 58), Vector2(far_l, far_top), Vector2(far_l, S05_FAR_Y), Vector2(84, S05_NEAR_Y)]), Color("#263243"))
+	draw_colored_polygon(PackedVector2Array([Vector2(1020, 58), Vector2(far_r, far_top), Vector2(far_r, S05_FAR_Y), Vector2(1020, S05_NEAR_Y)]), Color("#263243"))
+	draw_colored_polygon(PackedVector2Array([Vector2(84, S05_NEAR_Y), Vector2(1020, S05_NEAR_Y), Vector2(far_r, S05_FAR_Y), Vector2(far_l, S05_FAR_Y)]), Color("#2f3a48"))
+	for i in range(1, 6):
+		var z := float(i) / 6.0
+		draw_line(Vector2(_s05_px(84, z), _s05_y(z)), Vector2(_s05_px(1020, z), _s05_y(z)), Color(1, 1, 1, 0.05), 1.0)
+	draw_rect(Rect2(far_l, far_top, far_r - far_l, S05_FAR_Y - far_top), Color("#344354"), true)
+	draw_string(ThemeDB.fallback_font, Vector2(100, 150), "视觉传感器 · 迭代展", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color("#b8c7d4"))
+	# The mural on the far wall: the picture you stare at when your eyes are measured.
+	_draw_s05_landscape(Rect2(far_l + 14, far_top + 18, 220, 150))
+	draw_string(ThemeDB.fallback_font, Vector2(far_l + 60, S05_FAR_Y - 12), "（壁画）", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("#aab8c2"))
+	_draw_s05_chart(Vector2(far_l + 262, far_top + 14))
+	_draw_s05_cleaner()
+	# Depth-sorted floor things: far first.
+	var things: Array = []
+	for item in s05_hall_items:
+		things.append(item)
+	things.sort_custom(func(a, b): return _s05_item_z(a) > _s05_item_z(b))
+	for item in things:
+		if item.get("draw", false):
+			_draw_s05_item(item)
+	if s05_labeled and player:
+		var s := _s05_scale(_s05_player_z())
+		draw_rect(Rect2(player.position.x + 8.0 * s, player.position.y + 2.0 * s, 12.0 * s, 7.0 * s), Color("#e8e2c8"), true)
+		draw_line(Vector2(player.position.x + 4.0 * s, player.position.y + 4.0 * s), Vector2(player.position.x + 8.0 * s, player.position.y + 5.0 * s), Color("#e8e2c8"), 1.0)
+	if s05_view != "":
+		_draw_s05_view()
+
+func _draw_s05_c(center: Vector2, radius: float, gap: int, col: Color, width: float) -> void:
+	# Landolt C: a ring with one gap.
+	var gap_angle: float = [0.0, PI * 0.5, PI, PI * 1.5][gap]
+	draw_arc(center, radius, gap_angle + 0.45, gap_angle + TAU - 0.45, 24, col, width)
+
+func _draw_s05_chart(top_left: Vector2) -> void:
+	# The cleaner's chart: every letter is a glass case. From the floor it reads as an eye chart.
+	var rows := [[3], [0, 2], [1, 3, 0], [1, 3, 0, 2, -1]]
+	var sizes := [22.0, 15.0, 10.0, 7.0]
+	var y := top_left.y + 18.0
+	for r in range(rows.size()):
+		var n: int = rows[r].size()
+		var step: float = sizes[r] * 2.7
+		var x0: float = top_left.x + 100.0 - step * (n - 1) * 0.5
+		for i in range(n):
+			var c := Vector2(x0 + i * step, y)
+			draw_rect(Rect2(c - Vector2(sizes[r] + 4.0, sizes[r] + 4.0), Vector2(sizes[r] * 2.0 + 8.0, sizes[r] * 2.0 + 8.0)), Color(0.75, 0.85, 0.95, 0.25), false, 1.0)
+			if rows[r][i] >= 0:
+				_draw_s05_c(c, sizes[r], rows[r][i], Color("#e8e2d0"), maxf(sizes[r] * 0.28, 1.5))
+			else:
+				# The case he never cleans: fogged glass.
+				draw_rect(Rect2(c - Vector2(sizes[r] + 3.0, sizes[r] + 3.0), Vector2(sizes[r] * 2.0 + 6.0, sizes[r] * 2.0 + 6.0)), Color(0.8, 0.82, 0.85, 0.55), true)
+		y += sizes[r] * 2.0 + 18.0
+	draw_string(ThemeDB.fallback_font, Vector2(top_left.x + 70, S05_FAR_Y - 12), "视力表", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("#aab8c2"))
+
+func _draw_s05_cleaner() -> void:
+	var s := _s05_scale(S05_CLEANER_Z)
+	var x := _s05_px(S05_CLEANER_X, S05_CLEANER_Z)
+	var foot := _s05_y(S05_CLEANER_Z)
+	# Ladder, bucket, and the cleaner up on it with a rag.
+	draw_line(Vector2(x - 14 * s, foot), Vector2(x - 6 * s, foot - 120 * s), Color("#8a7a62"), 3.0 * s)
+	draw_line(Vector2(x + 14 * s, foot), Vector2(x + 6 * s, foot - 120 * s), Color("#8a7a62"), 3.0 * s)
+	for k in range(5):
+		var yy := foot - (k + 1) * 22.0 * s
+		draw_line(Vector2(x - 13 * s + k * 1.6 * s, yy), Vector2(x + 13 * s - k * 1.6 * s, yy), Color("#8a7a62"), 2.0 * s)
+	var body_y := foot - 120.0 * s
+	draw_rect(Rect2(x - 9 * s, body_y - 30 * s, 18 * s, 30 * s), Color("#5c7a6e"), true)
+	draw_circle(Vector2(x, body_y - 38 * s), 8.0 * s, Color("#c9ad8e"))
+	draw_line(Vector2(x - 9 * s, body_y - 24 * s), Vector2(x - 26 * s, body_y - 40 * s), Color("#5c7a6e"), 3.0 * s)
+	draw_rect(Rect2(x - 32 * s, body_y - 46 * s, 9 * s, 7 * s), Color("#e8e2c8"), true)
+	draw_rect(Rect2(x + 18 * s, foot - 16 * s, 16 * s, 16 * s), Color("#6f7d88"), true)
+	draw_line(Vector2(x + 22 * s, foot), Vector2(x + 34 * s, foot + 6 * s), Color(0.5, 0.75, 0.95, 0.6), 2.0)
+	draw_string(ThemeDB.fallback_font, Vector2(x - 18, body_y - 54 * s), "清洁工", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#e8dfc8"))
+
+func _draw_s05_item(item: Dictionary) -> void:
+	var z: float = item.z
+	var s := _s05_scale(z)
+	var x := _s05_px(item.x, z)
+	var foot := _s05_y(z)
+	match String(item.name):
+		"Eyepiece":
+			draw_line(Vector2(x, foot), Vector2(x, foot - 34 * s), Color("#b08d57"), 4.0 * s)
+			draw_circle(Vector2(x, foot - 38 * s), 6.0 * s, Color("#d9b36a"))
+			draw_string(ThemeDB.fallback_font, Vector2(x - 16, foot - 50 * s), "目镜", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#e8dfc8"))
+			# The rail runs from the eyepiece straight toward the chart.
+			draw_line(Vector2(x, foot), Vector2(_s05_px(S05_RAIL_X, 0.92), _s05_y(0.92)), Color(0.8, 0.7, 0.5, 0.5), 2.0)
+		"Lens":
+			var lz := _s05_lens_z()
+			s = _s05_scale(lz)
+			x = _s05_px(S05_RAIL_X, lz)
+			foot = _s05_y(lz)
+			draw_line(Vector2(x, foot), Vector2(x, foot - 44 * s), Color("#8a7a62"), 4.0 * s)
+			draw_circle(Vector2(x, foot - 58 * s), 15.0 * s, Color(0.85, 0.87, 0.9, 0.85) if not s05_lens_clean else Color(0.7, 0.88, 1.0, 0.35))
+			draw_arc(Vector2(x, foot - 58 * s), 15.0 * s, 0.0, TAU, 24, Color("#b08d57"), 3.0 * s)
+			draw_string(ThemeDB.fallback_font, Vector2(x - 20, foot - 80 * s), "老镜片", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color("#e8dfc8"))
+		_:
+			# A sample on a plinth.
+			draw_rect(Rect2(x - 22 * s, foot - 46 * s, 44 * s, 46 * s), Color("#3d4a5a"), true)
+			draw_rect(Rect2(x - 26 * s, foot - 50 * s, 52 * s, 6 * s), Color("#566674"), true)
+			var top := Vector2(x, foot - 64 * s)
+			match String(item.name):
+				"CompoundEye":
+					for k in range(7):
+						draw_circle(top + Vector2(cos(k * 0.9) * 8.0, sin(k * 0.9) * 8.0) * s * (0.0 if k == 0 else 1.0), 5.0 * s, Color("#7a8f6a"))
+				"GazeStation":
+					draw_circle(top, 13.0 * s, Color("#64747b"))
+					draw_circle(top + Vector2(-4, 1) * s, 5.0 * s, Color("#172431"))
+				"BlindStation":
+					draw_circle(top, 11.0 * s, Color("#79868b"))
+					# His hand keeps pointing at the same place: the fogged case in the chart.
+					draw_line(top + Vector2(10, 10) * s, top + Vector2(-26, -22) * s, Color("#9aa7ab"), 3.0 * s)
+				"AiwsSample":
+					draw_arc(top, 12.0 * s, 0.0, TAU, 24, Color("#b08d57"), 3.0 * s)
+					draw_circle(top, 10.0 * s, Color(0.85, 0.65, 0.9, 0.35))
+			draw_string(ThemeDB.fallback_font, Vector2(x - 34 * s - 6, foot + 14), item.label, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("#e8dfc8"))
+
+func _draw_s05_view() -> void:
+	# Looking through something: a round view in the middle of the screen.
+	var c := Vector2(576, 300)
+	draw_circle(c, 156.0, Color(0, 0, 0, 0.85))
+	draw_circle(c, 150.0, Color("#d8d4c6"))
+	if s05_view == "aiws":
+		# Through the sample, the far little cleaner fills the whole view.
+		draw_circle(c + Vector2(0, -40), 60.0, Color("#c9ad8e"))
+		draw_rect(Rect2(c.x - 90, c.y + 20, 180, 140), Color("#5c7a6e"), true)
+		draw_circle(c + Vector2(-20, -50), 6.0, Color("#2a2a2a"))
+		draw_circle(c + Vector2(20, -50), 6.0, Color("#2a2a2a"))
+	else:
+		var blur := absf(float(s05_lens_notch - S05_FOCUS_NOTCH)) * 4.0
+		for i in range(5):
+			var p := c + Vector2(-112 + i * 56, 0)
+			if i < 4:
+				var gap: int = S05_LAST_ROW_GAPS[i]
+				if blur <= 0.1:
+					_draw_s05_c(p, 18.0, gap, Color("#1d1d1d"), 6.0)
+				else:
+					for k in range(6):
+						var off := Vector2(cos(k * 1.05), sin(k * 1.05)) * blur
+						_draw_s05_c(p + off, 18.0, gap, Color(0.12, 0.12, 0.12, 0.22), 6.0 + blur)
+			else:
+				draw_rect(Rect2(p - Vector2(24, 24), Vector2(48, 48)), Color(0.55, 0.57, 0.6, 0.5), true)
+				if blur <= 0.1 and s05_lens_clean:
+					# Behind the dusty glass: eight small lenses, in two rows.
+					for k in range(8):
+						draw_circle(p + Vector2(-13 + (k % 4) * 9, -5 + (k / 4) * 10), 3.0, Color("#1f3b55"))
+		if not s05_lens_clean:
+			draw_circle(c, 150.0, Color(0.92, 0.93, 0.95, 0.8))
+	draw_arc(c, 150.0, 0.0, TAU, 48, Color("#b08d57"), 6.0)
+
+## --- S05 logic --------------------------------------------------------------------------------
+func _s05_say(lines: Array) -> void:
+	s05_lines = lines.slice(1)
+	_show_dialogue(lines[0])
+	s05_line_timer = S04_LINE_TIME
+
+func _s05_next_line() -> void:
+	if s05_lines.is_empty():
+		return
+	_show_dialogue(s05_lines.pop_front())
+	s05_line_timer = S04_LINE_TIME
+
+func _update_s05(delta: float) -> void:
+	if not s05_active:
+		return
+	if s05_line_timer > 0.0:
+		s05_line_timer -= delta
+		if s05_line_timer <= 0.0:
+			if not s05_lines.is_empty():
+				_s05_next_line()
+			elif s05_finish_pending:
+				_s05_finish()
+				return
+	if s05_enter_anim >= 0.0:
+		s05_enter_anim += delta / 0.9
+		if s05_enter_anim >= 1.0:
+			s05_enter_anim = -1.0
+			_s05_enter_hall()
+		return
+	if s05_room != "hall" or not player:
+		return
+	var z := _s05_player_z()
+	player.scale = Vector2.ONE * _s05_scale(z)
+	player.position.x = clampf(player.position.x, _s05_px(100, z), _s05_px(1005, z))
+	if s05_view != "":
+		var spot := _s05_item("Eyepiece") if s05_view == "lens" else _s05_item("AiwsSample")
+		if spot.is_empty() or not _s05_near(spot):
+			s05_view = ""
+
+func _s05_item(item_name: String) -> Dictionary:
+	for item in s05_hall_items:
+		if item.name == item_name:
+			return item
+	return {}
+
+func _s05_item_z(item: Dictionary) -> float:
+	return _s05_lens_z() if item.name == "Lens" else float(item.z)
+
+func _s05_near(item: Dictionary) -> bool:
+	var z := _s05_item_z(item)
+	var x := _s05_px(S05_RAIL_X if item.name == "Lens" else item.x, z)
+	return absf(player.position.x - x) < float(item.r) * _s05_scale(z) and absf(_s05_player_z() - z) < 0.09
+
+func _get_nearest_s05_hall_item() -> Dictionary:
+	var nearest: Dictionary = {}
+	var best := 99999.0
+	for item in s05_hall_items:
+		if _s05_near(item):
+			var d := absf(_s05_player_z() - _s05_item_z(item))
+			if d < best:
+				best = d
+				nearest = item
+	return nearest
+
+func _s05_enter_hall() -> void:
+	s05_room = "hall"
+	_s05_set_depth_mode(true)
+	player.position = Vector2(S05_RAIL_X - 140.0, S05_NEAR_Y - 6.0)
+	player.input_locked = false
+	chapter_state.set_map_state(&"Museum_S05_SensorHall")
+	chapter_state.set_player_goal(&"explore_the_sensor_hall")
+	objective_label.text = "W / S：往远处走、往近处走"
+	s05_labeled = true
+	chapter_state.mark_event(&"s05_labeled_by_cleaner")
+	_s05_say([
+		"（《窗》后面不是路，是一间很深的展厅。远处的墙上画着刚才那幅画：草地、蓝天，路的尽头是一座红房子。）",
+		"（展厅尽头，梯子上有个小小的人，在擦一面视力表。）\n清洁工（远远地）：又来了一件小展品。……编号，贴上。",
+		"（一张标签飞过来，贴在格雷汉的袖子上。）\nBlue Lake：他离我们那么远。在他眼里，你大概只有拇指那么大。"
+	])
+
+func _s05_hall_interact() -> void:
+	var nearest := _get_nearest_s05_hall_item()
+	if nearest.is_empty():
+		return
+	match String(nearest.name):
+		"Cleaner":
+			_s05_talk_to_cleaner()
+		"Bucket":
+			chapter_state.mark_event(&"s05_bucket_seen")
+			_show_dialogue("水桶底下裂了一道缝。\n清洁工：上回打翻了，水全漏到楼下去了。楼下那幅画，到现在还湿着吧。")
+		"Mural":
+			chapter_state.mark_event(&"s05_mural_seen")
+			_show_dialogue("壁画：绿草，蓝天，一条路，路的尽头是一座红房子。\n……这座房子，是美术馆。")
+		"Chart":
+			_show_dialogue("视力表。走近了才发现，每个“C”都是一只玻璃展柜，比人还高。\n最后一行的第五格，玻璃是雾的。")
+		"Lens":
+			_s05_move_lens()
+		"Eyepiece":
+			_s05_look_through_lens()
+		"CompoundEye":
+			_show_dialogue("样品 · 复眼：几千只小眼，每只只看见一个点，拼成一张马赛克。\n看得不清楚，可是什么动静都逃不掉。")
+		"GazeStation":
+			_show_dialogue("测试处 ·《凝视》：请注视中心的点。\n……机械眼珠跟着你看的地方转。")
+		"BlindStation":
+			chapter_state.mark_event(&"s05_blind_station_seen")
+			_show_dialogue("测试处 ·《盲》：受试者说，他什么也看不见。\n可他的手一直指着同一个地方：视力表最后一行。")
+		"AiwsSample":
+			s05_view = "aiws"
+			chapter_state.mark_event(&"s05_aiws_seen")
+			_show_dialogue("样品 · 视物显大：有些人会突然觉得东西变大、变小。\n透过它看出去——远处那个小小的清洁工，大得装不下。")
+
+func _s05_talk_to_cleaner() -> void:
+	if not s05_cleaner_met:
+		s05_cleaner_met = true
+		chapter_state.mark_event(&"s05_cleaner_met")
+		objective_label.text = "帮清洁工看清视力表的最后一行"
+		_s05_say([
+			"清洁工：……哦，原来你这么大。",
+			"清洁工：格雷汉·斯蒂尔，修灯的。你的标签我早就贴过了，就在楼下那扇门上。",
+			"清洁工：这里展的是视觉传感器，一代一代的。我负责编号、排好、擦干净。\n这面视力表我排了很多年，最后一行总差一格，补不上。",
+			"清洁工：我眼睛不行了，最后一行看不清。你帮我看看？\n前面有块老镜片，从目镜里对着它看。"
+		])
+	elif not s05_lens_clean:
+		_show_dialogue("清洁工：镜片？哪儿有镜片。\n我只擦得到够大的东西，小东西……我看不见。")
+	elif not s05_cell_seen:
+		_show_dialogue("清洁工：擦干净了，去看吧。")
+	else:
+		_show_dialogue("清洁工：第五格？我从来没擦过那一格。那里什么也没有。")
+
+func _s05_move_lens() -> void:
+	var push := _s05_player_z() < _s05_lens_z()
+	if push and s05_lens_notch < S05_RAIL_NOTCHES - 1:
+		s05_lens_notch += 1
+	elif not push and s05_lens_notch > 0:
+		s05_lens_notch -= 1
+	else:
+		_show_dialogue("镜片架推到头了。")
+		return
+	chapter_state.mark_event(&"s05_lens_moved")
+	if s05_lens_notch == S05_RAIL_NOTCHES - 1 and s05_cleaner_met and not s05_lens_clean:
+		s05_lens_clean = true
+		chapter_state.mark_event(&"s05_lens_cleaned")
+		_s05_say([
+			"清洁工：哟，这儿还有一件。脏成这样。",
+			"（他从梯子上探过身，把镜片擦得干干净净。）\n清洁工：好了。"
+		])
+	elif not s05_lens_clean:
+		_show_dialogue("格雷汉把镜片架往" + ("里推了一格。" if push else "外拉了一格。") + "\n镜片上蒙着一层白雾。")
+	else:
+		_show_dialogue("格雷汉把镜片架往" + ("里推了一格。" if push else "外拉了一格。"))
+
+func _s05_look_through_lens() -> void:
+	s05_view = "lens"
+	chapter_state.mark_event(&"s05_eyepiece_used")
+	if not s05_lens_clean:
+		if s05_cleaner_met:
+			_show_dialogue("镜片上蒙着一层白雾，什么也看不清。\nBlue Lake：他只看得见够大的东西。……近大远小。把镜片推到他眼前去。")
+		else:
+			_show_dialogue("镜片上蒙着一层白雾，什么也看不清。")
+	elif s05_lens_notch != S05_FOCUS_NOTCH:
+		_show_dialogue("最后一行的 C 糊成一片。\n镜片离得" + ("太远了。" if s05_lens_notch > S05_FOCUS_NOTCH else "太近了。"))
+	elif not s05_cell_seen:
+		s05_cell_seen = true
+		s05_finish_pending = true
+		chapter_state.mark_event(&"s05_last_cell_seen")
+		_s05_say([
+			"看清了。最后一行：下，上，右，左……\n第五格不是空的。灰蒙蒙的玻璃后面，有八个小小的镜头，排成两行。",
+			"清洁工（远远地）：第五格？我从来没擦过那一格。那里什么也没有。",
+			"格雷汉：……八只眼睛。\nBlue Lake：那我们就去擦一擦。"
+		])
+	else:
+		_show_dialogue("第五格里，八个小小的镜头。")
+
+func _s05_finish() -> void:
+	s05_finish_pending = false
+	chapter_state.complete_slice(ChapterState.Slice.S05_WINDOW)
+	_enter_s06_after_s05()
 
 func _draw_s06_gallery() -> void:
 	# S06 starts with an empty platform. Two ways of seeing, laid on top of each other, reveal it.
@@ -2804,22 +3214,32 @@ func _s04_finish() -> void:
 func _try_s05_interact() -> void:
 	if not s05_active or scene_state != "gallery" or transition_started:
 		return
+	if not s05_lines.is_empty():
+		_s05_next_line()
+		return
+	if s05_finish_pending or s05_enter_anim >= 0.0:
+		return
+	if s05_room == "hall":
+		_s05_hall_interact()
+		queue_redraw()
+		return
 	var nearest := _get_nearest_s05_interactable()
 	if nearest.is_empty():
 		return
 	if not s05_window_observed:
 		s05_window_observed = true
 		chapter_state.mark_event(&"s05_window_observed")
-		_show_dialogue("这是一幅画。……可它看起来太像一扇真正的窗。\nBlue Lake：按 Space，让我来看。")
-		_show_space_prompt()
-	elif not blue_lake_active and not s05_window_open:
-		_show_dialogue("Blue Lake：你把它看成一幅画。可它不只是一幅画。\n按 Space，用粉笔碰一碰它。")
+		_show_dialogue("《窗》：画里是草地、蓝天、一条路，路的尽头是一座红房子。\n现在它有了窗框，也有了把手。Blue Lake：按 Space。")
 		_show_space_prompt()
 	else:
-		_show_dialogue("Blue Lake：你把它看成一幅画。可它不只是一幅画。")
+		_show_dialogue("Blue Lake：按 Space，用粉笔碰一碰把手。")
+		_show_space_prompt()
 	queue_redraw()
 
 func _try_toggle_s05_blue_lake() -> void:
+	if s05_room == "hall":
+		_show_dialogue("Blue Lake：在这里，我看什么都差不多大。")
+		return
 	if not s05_window_observed:
 		_show_dialogue("Blue Lake：先看清楚《窗》。")
 		return
@@ -2832,48 +3252,48 @@ func _try_toggle_s05_blue_lake() -> void:
 	blue_lake_active = not blue_lake_active
 	chalk_cursor.set_active(blue_lake_active)
 	visual_mode = "Chalk Interaction" if blue_lake_active else "Standard"
-	_show_dialogue("Blue Lake：" + (("把粉笔移到《窗》上，点左键，打开它。" if s05_window_handle_found else "把粉笔移到《窗》上，点左键。") if blue_lake_active else "……先收起来。"))
+	_hide_space_prompt()
+	_show_dialogue("Blue Lake：" + ("把粉笔移到把手上，点左键。" if blue_lake_active else "……先收起来。"))
 	_update_ui()
 	queue_redraw()
 
 func _try_s05_chalk_interaction() -> void:
 	if chalk_hover_target != "Window" or s05_window_open:
 		return
-	if not s05_window_handle_found:
-		s05_window_handle_found = true
-		blue_lake_active = false
-		chalk_cursor.set_active(false)
-		visual_mode = "Window Handle Layer"
-		chapter_state.mark_event(&"s05_window_handle_found")
-		_show_dialogue("Blue Lake：把手一直在那里。只是你以前看不见。\n再按 Space，用粉笔打开它。")
-		_show_space_prompt()
-		_update_ui()
-		queue_redraw()
-		return
 	s05_window_open = true
 	_hide_space_prompt()
 	blue_lake_active = false
 	chalk_cursor.set_active(false)
-	visual_mode = "Window Open Layer"
+	visual_mode = "Standard"
 	chapter_state.mark_event(&"s05_window_opened")
 	chapter_state.learn(&"s05_blue_lake_can_change_the_world")
 	chapter_state.set_player_goal(&"understand_the_window")
-	chapter_state.complete_slice(ChapterState.Slice.S05_WINDOW)
-	_show_dialogue("Blue Lake：你把一幅画……打开了。\n这不是出口。")
-	objective_label.text = "《窗》打开了。它为什么带我们来这里？"
+	_show_dialogue("Blue Lake：你把一幅画……打开了。")
+	objective_label.text = "《窗》打开了。"
+	player.input_locked = true
+	s05_enter_anim = 0.0
 	_update_ui()
 	queue_redraw()
-	await get_tree().create_timer(1.0).timeout
-	_enter_s06_after_s05()
 
 func _enter_s05_after_s04() -> void:
 	if s05_active:
 		return
 	s04_active = false
 	s05_active = true
+	s05_room = "window"
 	s05_window_observed = false
 	s05_window_handle_found = false
 	s05_window_open = false
+	s05_enter_anim = -1.0
+	s05_labeled = false
+	s05_cleaner_met = false
+	s05_lens_notch = 1
+	s05_lens_clean = false
+	s05_view = ""
+	s05_cell_seen = false
+	s05_finish_pending = false
+	s05_lines = []
+	s05_line_timer = 0.0
 	blue_lake_active = false
 	blue_lake_transform_completed = false
 	chalk_cursor.set_active(false)
@@ -2881,8 +3301,8 @@ func _enter_s05_after_s04() -> void:
 	chapter_state.set_map_state(&"Museum_S05_Window")
 	chapter_state.set_player_goal(&"find_the_window")
 	chapter_state.mark_story_event(&"s05_started")
-	objective_label.text = "寻找《窗》"
-	_show_dialogue("蓝湖：我们是不是该去看看那扇窗？")
+	objective_label.text = "打开《窗》"
+	_show_dialogue("Blue Lake：有窗框，有把手。……去打开它。")
 	_update_ui()
 	queue_redraw()
 
@@ -3016,6 +3436,9 @@ func _enter_s06_after_s05() -> void:
 	if s06_active:
 		return
 	s05_active = false
+	s05_room = "window"
+	s05_view = ""
+	_s05_set_depth_mode(false)
 	s06_active = true
 	s06_platform_observed = false
 	s06_sensor_revealed = false
@@ -3355,6 +3778,14 @@ func _get_nearest_s04_interactable() -> Dictionary:
 	return nearest
 
 func _get_nearest_s05_interactable() -> Dictionary:
+	if s05_room == "hall":
+		var item := _get_nearest_s05_hall_item()
+		if item.is_empty():
+			return {}
+		var z := _s05_item_z(item)
+		var sx := _s05_px(S05_RAIL_X if item.name == "Lens" else float(item.x), z)
+		var sy := _s05_y(z)
+		return {"name": item.name, "position": Vector2(sx, sy), "radius": 10.0, "hint_y": sy + 6.0}
 	var nearest: Dictionary = {}
 	var best := 99999.0
 	for item in s05_interactables:
@@ -3610,6 +4041,16 @@ func _update_interaction_hint() -> void:
 			interaction_hint_label.text = "E 装上手臂"
 		elif n3 == "HallDoor" and s03_mirror_held and not s03_crossed:
 			interaction_hint_label.text = "E 推门"
+	if s05_active:
+		var n5: String = nearest.get("name", "")
+		if not s05_lines.is_empty():
+			interaction_hint_label.text = "E 继续"
+		elif n5 == "Cleaner":
+			interaction_hint_label.text = "E 说话"
+		elif n5 == "Lens":
+			interaction_hint_label.text = "E 往里推" if _s05_player_z() < _s05_lens_z() else "E 往外拉"
+		elif n5 in ["Eyepiece", "AiwsSample"]:
+			interaction_hint_label.text = "E 看"
 	if s04_active:
 		var n4: String = nearest.get("name", "")
 		if not s04_lines.is_empty():
