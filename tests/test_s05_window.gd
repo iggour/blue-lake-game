@@ -97,7 +97,7 @@ func _run() -> void:
 	await create_timer(main.S04_LINE_TIME + 0.5).timeout
 	_check(main.chapter_state.is_slice_completed(ChapterState.Slice.S05_WINDOW), "S05 complete")
 	_check(main.s06_active, "hands on to S06")
-	_check(main.player.scale == Vector2.ONE and main.player.ground_top == 410.0, "depth mode is switched off after S05")
+	_check(main.s05_room == "hall" and main.player.ground_top == main.S05_FAR_Y, "S06 continues in the same hall, depth still on")
 
 	if failures.is_empty():
 		print("TEST PASS: S05")
