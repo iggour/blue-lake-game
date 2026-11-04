@@ -33,6 +33,7 @@ func _setup_s07() -> void:
 	main.s06_case_clean = true
 	main.s06_sensor_revealed = true
 	main.s05_lines = []
+	main.s06_finish_pending = false
 	main.chapter_state.complete_slice(ChapterState.Slice.S06_PLATFORM)
 	main._enter_s07_after_s06()
 	await _frames(2)
@@ -44,23 +45,39 @@ func _run() -> void:
 	await _e_at("Rack")
 	_check(main.s08_active and main.s08_stolen, "second E takes the sensor -> S08")
 	_check(main.chapter_state.is_slice_completed(ChapterState.Slice.S07_RETURN), "S07 complete")
-	var g0: Vector2 = main.s08_guard
-	await _wait(1.2)
-	_check(main.s08_guard.distance_to(g0) > 30.0, "the guard comes after Graham")
-	await _shot("s08_1_chase")
-	# Stand still: he closes in but never catches her.
-	await _wait(5.0)
-	_check(main.s08_guard.distance_to(main.player.position) >= main.S08_GUARD_REACH - 1.0, "the guard never quite reaches her")
-	_check(main.s08_chase_time > main.S08_TUNNEL_TIME * 0.8, "the tunnel has closed in")
-	await _shot("s08_2_tunnel")
-	await _e_at("BackWindow")
-	_check(main.transition_started, "E 《窗》: climb out")
-	await _wait(4.5)
-	_check(main.scene_state == "theater", "the curtain opens on the theater")
-	_check(main.dialogue_label.text.contains("舞台"), "standing on the stage")
+	await _wait(0.8)
+	_check(main.s08_run < 1.0, "standing still: the circle does not close")
+	# Run back and forth; the circle closes with the distance run.
+	var closest := 99999.0
+	var half_shot := false
+	for i in range(14):
+		var action := "move_left" if i % 2 == 0 else "move_right"
+		Input.action_press(action)
+		for f in range(30):
+			await physics_frame
+			if main.s08_active and main.scene_state == "gallery":
+				closest = minf(closest, main.s08_guard.distance_to(main.player.position))
+		Input.action_release(action)
+		if not half_shot and main.s08_run > main.S08_RUN_TOTAL * 0.5:
+			half_shot = true
+			_check(main._s08_iris_radius() < 500.0, "half-way: the circle has closed in")
+			await _shot("s08_1_iris")
+		if main.s08_black_time >= 0.0 or main.scene_state == "theater":
+			break
+	_check(closest >= main.S08_GUARD_REACH - 10.0, "the guard never reaches her (closest %.0f)" % closest)
+	_check(main.s08_exit_started, "the circle closes completely")
+	await _wait(0.3)
+	await _shot("s08_2_black")
+	await _wait(1.0)
+	_check(main.scene_state == "theater", "after the black: the theater")
+	_check(main.theater_reveal >= 0.0, "a circle of light comes on first")
+	await _wait(0.3)
+	await _shot("s08_3_spotlight")
+	_check(main.dialogue_label.text.contains("灯光"), "a circle of light on Graham")
 	_check(main.chapter_state.is_slice_completed(ChapterState.Slice.S08_TRUE_EXIT), "S08 complete")
 	_check(main.player.scale == Vector2.ONE and main.player.ground_top == 410.0, "depth off on the stage")
-	await _shot("s08_3_stage")
+	await _wait(2.0)
+	await _shot("s08_4_stage")
 	_finish("S08")
 
 func _stand_at(item_name: String, dz: float = 0.0) -> void:
@@ -129,3 +146,13 @@ func _finish(label: String) -> void:
 		for f in failures:
 			printerr("TEST FAIL: " + f)
 		quit(1)
+
+func _stand_cleaner(z: float) -> void:
+	main.player.position = Vector2(main._s05_px(main.S05_CLEANER_X, z), main._s05_y(z))
+	await _frames(2)
+
+func _talk_cleaner(z: float) -> void:
+	await _stand_cleaner(z)
+	var nearest: Dictionary = main._get_nearest_interactable()
+	_check(nearest.get("name", "") == "Cleaner", "at z=%.2f E targets the cleaner (got %s)" % [z, nearest.get("name", "<nothing>")])
+	await _press("interact")

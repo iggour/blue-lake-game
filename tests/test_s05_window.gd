@@ -45,16 +45,17 @@ func _run() -> void:
 	await create_timer(0.8).timeout
 	_check(main.s05_room == "hall", "the landscape grows into the hall")
 	_check(main.s05_labeled, "the cleaner tags Graham from afar")
-	var land_z: float = main._s05_player_z()
-	_check(land_z >= main.S05_BACK_WINDOW_Z.x and land_z <= main.S05_BACK_WINDOW_Z.y and main.player.position.x < 260.0, "Graham lands right beside 《窗》 (x=%d, z=%.2f)" % [main.player.position.x, land_z])
+	_check(main._s05_in_painting() and main.player.scale.x < 0.2, "Graham comes out of the red house's door, inside the mural, tiny (scale %.2f)" % main.player.scale.x)
 	await _shot("s05_3_hall")
 	await _drain()
 
-	# Depth: W walks away from the camera and Graham gets smaller.
+	# Walk down the painted road and out of the mural onto the floor; she grows as she comes.
+	await _hold("move_down", 40)
+	_check(main.s05_stepped_out and not main._s05_in_painting(), "S walks out of the painting onto the floor")
+	await _shot("s05_3b_out_of_mural")
 	var y0: float = main.player.position.y
-	await _hold("move_up", 20)
-	_check(main.player.position.y < y0 - 20.0, "W walks into depth")
-	_check(main.player.scale.x < 0.98, "farther away, Graham is smaller (scale %.2f)" % main.player.scale.x)
+	await _hold("move_down", 20)
+	_check(main.player.position.y > y0 + 20.0 and main.player.scale.x > 0.6, "nearer, Graham is bigger (scale %.2f)" % main.player.scale.x)
 
 	await _e_at("Eyepiece")
 	_check(main.s05_view == "lens" and main.dialogue_label.text.contains("白雾"), "eyepiece before cleaning: fogged")
@@ -67,14 +68,18 @@ func _run() -> void:
 	_check(main.dialogue_label.text.contains("搬了下来"), "the exhibits were taken off the rack and piled up")
 	await _e_at("Rack")
 	_check(main.dialogue_label.text.contains("空着"), "the rack is empty except the fogged case")
-	await _e_at("BlindStation")
-	_check(main.dialogue_label.text.contains("最后一行"), "《盲》 points at the chart's last row")
-	await _e_at("AiwsSample")
-	_check(main.s05_view == "aiws", "looking through the macropsia sample")
-	await _shot("s05_5_aiws")
+	await _e_at("Plinth_s01")
+	_check(main.dialogue_label.text.contains("左上"), "an empty plinth points at a window of the red house")
 
-	await _e_at("Cleaner")
-	_check(main.s05_cleaner_met, "the cleaner talks once Graham is close")
+	# The cleaner: tiny from far, a giant up close, normal only from the footprints.
+	await _talk_cleaner(0.15)
+	_check(main._s05_cleaner_size() == "tiny" and not main.s05_cleaner_met and main.dialogue_label.text.contains("脚印"), "from far he is tiny and can't see her; Blue Lake points at the footprints")
+	await _shot("s05_5_cleaner_tiny")
+	await _talk_cleaner(0.92)
+	_check(main._s05_cleaner_size() == "giant" and not main.s05_cleaner_met, "up close he is a giant and can't see her")
+	await _shot("s05_5b_cleaner_giant")
+	await _talk_cleaner(main.S05_FOOTPRINTS_Z)
+	_check(main._s05_cleaner_size() == "normal" and main.s05_cleaner_met, "from the footprints he is normal size and talks")
 	await _shot("s05_6_cleaner")
 	await _drain()
 
@@ -97,7 +102,7 @@ func _run() -> void:
 	await create_timer(main.S04_LINE_TIME + 0.5).timeout
 	_check(main.chapter_state.is_slice_completed(ChapterState.Slice.S05_WINDOW), "S05 complete")
 	_check(main.s06_active, "hands on to S06")
-	_check(main.s05_room == "hall" and main.player.ground_top == main.S05_FAR_Y, "S06 continues in the same hall, depth still on")
+	_check(main.s05_room == "hall" and main.player.ground_top == main.S05_PAINT_TOP_Y, "S06 continues in the same hall, depth still on")
 
 	if failures.is_empty():
 		print("TEST PASS: S05")
@@ -106,6 +111,16 @@ func _run() -> void:
 		for f in failures:
 			printerr("TEST FAIL: " + f)
 		quit(1)
+
+func _stand_cleaner(z: float) -> void:
+	main.player.position = Vector2(main._s05_px(main.S05_CLEANER_X, z), main._s05_y(z))
+	await _frames(2)
+
+func _talk_cleaner(z: float) -> void:
+	await _stand_cleaner(z)
+	var nearest: Dictionary = main._get_nearest_interactable()
+	_check(nearest.get("name", "") == "Cleaner", "at z=%.2f E targets the cleaner (got %s)" % [z, nearest.get("name", "<nothing>")])
+	await _press("interact")
 
 func _stand_at(item_name: String, dz: float = 0.0) -> void:
 	var item: Dictionary = main._s05_item(item_name)

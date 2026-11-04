@@ -33,6 +33,7 @@ func _setup_s07() -> void:
 	main.s06_case_clean = true
 	main.s06_sensor_revealed = true
 	main.s05_lines = []
+	main.s06_finish_pending = false
 	main.chapter_state.complete_slice(ChapterState.Slice.S06_PLATFORM)
 	main._enter_s07_after_s06()
 	await _frames(2)
@@ -45,6 +46,13 @@ func _run() -> void:
 	await _press("blue_lake")
 	await _frames(2)
 	_check(not main.blue_lake_active, "Space before the lamp is on does nothing")
+	# Imitation hint: up close the giant cleaner reaches the top of the rack for the card.
+	await _talk_cleaner(0.92)
+	_check(main.s06_has_card, "the giant cleaner fetches case 5's card from the top of the rack")
+	await _drain()
+	await _e_at("Rack")
+	_check(main.s05_view == "card", "E the rack: the card with the silhouette")
+	await _shot("s06_0_card")
 	await _e_at("Lamp")
 	_check(main.s06_lamp_on, "E turns the floor lamp on")
 	await _shot("s06_1_messy_shadow")
@@ -52,10 +60,11 @@ func _run() -> void:
 	await main.blue_lake_transform.finished
 	await _frames(2)
 	_check(main.blue_lake_active, "Space: Blue Lake")
-	var before: int = main.s06_pieces["head"]
 	main.chalk_hover_target = "Piece_head"
 	main._try_s06_chalk_interaction()
-	_check(main.s06_pieces["head"] != before and not main.s06_shadow_done, "Chalk shifts one piece; not done yet")
+	main.chalk_hover_target = "Piece_head"
+	main._try_s06_chalk_interaction()
+	_check(main.s06_pieces["head"] == main.S06_PIECE_CORRECT["head"] and main.dialogue_label.text.contains("对上了"), "a piece in the right slot snaps (feedback)")
 	for piece in main.S06_PIECES:
 		var guard := 0
 		while main.s06_pieces[piece] != main.S06_PIECE_CORRECT[piece] and guard < 3:
@@ -63,21 +72,20 @@ func _run() -> void:
 			main._try_s06_chalk_interaction()
 			guard += 1
 	_check(main.s06_shadow_done, "the shadow is Kent")
-	_check(not main.blue_lake_active, "Blue Lake folds away when the shadow is done")
 	await _shot("s06_2_kent_shadow")
 	await _drain()
-	await _e_at("Cleaner")
-	_check(main.s06_case_clean, "the cleaner sees the shadow looking at the fifth case and wipes it")
+	await _talk_cleaner(main.S05_FOOTPRINTS_Z)
+	_check(not main.s06_case_clean and main.dialogue_label.text.contains("小一点"), "normal size: too big to get into the fifth case")
+	await _talk_cleaner(0.15)
+	_check(main.s06_case_clean, "from far he is tiny, climbs into the fifth case and wipes it from inside")
 	await _drain()
 	await _e_at("Rack")
-	_check(main.dialogue_label.text.contains("Space"), "E the rack: the case is clean but unreadable, press Space")
+	_check(main.dialogue_label.text.contains("Space"), "E the rack: clean but unreadable, press Space")
 	await _press("blue_lake")
 	await _frames(2)
-	_check(main.blue_lake_active, "Space: Blue Lake again")
 	main.chalk_hover_target = "SensorCase"
 	main._try_s06_chalk_interaction()
 	_check(main.s06_sensor_revealed, "Chalk on the case: the sensor shows")
-	_check(main.chapter_state.knows(&"s06_invisible_does_not_mean_nonexistent"), "S06 knowledge learned")
 	await _shot("s06_3_sensor")
 	await _drain()
 	await _wait(main.S04_LINE_TIME + 0.5)
@@ -150,3 +158,13 @@ func _finish(label: String) -> void:
 		for f in failures:
 			printerr("TEST FAIL: " + f)
 		quit(1)
+
+func _stand_cleaner(z: float) -> void:
+	main.player.position = Vector2(main._s05_px(main.S05_CLEANER_X, z), main._s05_y(z))
+	await _frames(2)
+
+func _talk_cleaner(z: float) -> void:
+	await _stand_cleaner(z)
+	var nearest: Dictionary = main._get_nearest_interactable()
+	_check(nearest.get("name", "") == "Cleaner", "at z=%.2f E targets the cleaner (got %s)" % [z, nearest.get("name", "<nothing>")])
+	await _press("interact")

@@ -33,6 +33,7 @@ func _setup_s07() -> void:
 	main.s06_case_clean = true
 	main.s06_sensor_revealed = true
 	main.s05_lines = []
+	main.s06_finish_pending = false
 	main.chapter_state.complete_slice(ChapterState.Slice.S06_PLATFORM)
 	main._enter_s07_after_s06()
 	await _frames(2)
@@ -41,23 +42,47 @@ func _setup_s07() -> void:
 func _run() -> void:
 	await _setup_s07()
 	_check(main.s07_active and main.s07_room == "hall", "S07 in the hall")
-	var rooms := {"GazeStation": ["s01", "MapSticker"], "BlindStation": ["s02", "BlueFish"], "AiwsSample": ["s04", "GirlDrawing"]}
-	for viewpoint in rooms:
-		var room: String = rooms[viewpoint][0]
-		await _e_at(viewpoint)
+	await _press("blue_lake")
+	await main.blue_lake_transform.finished
+	await _frames(2)
+	_check(main.blue_lake_active, "Space: Blue Lake")
+	await _shot("s07_0_windows")
+	var rooms := [["s01", "MapSticker", 0], ["s02", "BlueFish", 1], ["s04", "GirlDrawing", 2]]
+	for entry in rooms:
+		var room: String = entry[0]
+		if not main.blue_lake_active:
+			await _press("blue_lake")
+			await _frames(2)
+		main.chalk_hover_target = "MuralWindow%d" % entry[2]
+		main._try_s07_chalk_interaction()
 		await _wait(1.0)
-		_check(main.s07_room == room, "looking through %s leads to %s (got %s)" % [viewpoint, room, main.s07_room])
+		_check(main.s07_room == room, "Chalk on window %d leads to %s (got %s)" % [entry[2], room, main.s07_room])
 		_check(main.player.ground_top == 410.0 and main.player.scale == Vector2.ONE, "no depth in %s" % room)
-		await _shot("s07_" + room)
-		await _e_room(rooms[viewpoint][1])
+		await _e_room(entry[1])
 		_check(main.s07_found[room], "found the hidden thing in %s" % room)
-		await _e_room("Postcard")
+		await _shot("s07_" + room)
+		await _press("blue_lake")
+		await _frames(2)
+		_check(main.blue_lake_active, "Space in %s: Blue Lake" % room)
+		main.chalk_hover_target = "ReturnWindow"
+		main._try_s07_chalk_interaction()
 		await _wait(1.0)
-		_check(main.s07_room == "hall", "the postcard leads back to the hall from %s" % room)
-		_check(main.player.ground_top == main.S05_FAR_Y, "depth back on in the hall")
+		_check(main.s07_room == "hall" and main.player.ground_top == main.S05_PAINT_TOP_Y, "Chalk on the room's own window leads back to the hall")
+		_check(main.s07_shelved[room] and main.dialogue_label.text.contains("编号"), "the cleaner numbers it and puts it on its plinth")
+		await _drain()
+	# Telescope: the lens notch decides which window is sharp.
+	main.s05_lens_notch = 2
 	await _e_at("Eyepiece")
-	_check(main.s07_found["hall"], "through the eyepiece: this hall, and Graham looking")
+	_check(main.s05_view == "house" and main.dialogue_label.text.contains("左下"), "through the eyepiece, notch 2 brings the bottom-left window into focus")
+	await _shot("s07_telescope")
+	main.s05_lens_notch = 3
+	await _e_at("Eyepiece")
+	_check(main.dialogue_label.text.contains("水桶"), "notch 3: this hall, something behind the bucket")
+	await _e_at("Bucket")
+	_check(main.s07_found["hall"] and main.s07_shelved["hall"], "behind the bucket: the fourth thing, shelved")
+	_check(main.chapter_state.has_event(&"achievement_all_filed") and main.s07_achievement_time >= 0.0, "all four plinths full: achievement")
 	await _shot("s07_lit_windows")
+	await _drain()
 	await _e_at("Rack")
 	_check(main.s07_hesitated and main.s07_active, "first E on the sensor: Graham hesitates")
 	_finish("S07")
@@ -128,3 +153,13 @@ func _finish(label: String) -> void:
 		for f in failures:
 			printerr("TEST FAIL: " + f)
 		quit(1)
+
+func _stand_cleaner(z: float) -> void:
+	main.player.position = Vector2(main._s05_px(main.S05_CLEANER_X, z), main._s05_y(z))
+	await _frames(2)
+
+func _talk_cleaner(z: float) -> void:
+	await _stand_cleaner(z)
+	var nearest: Dictionary = main._get_nearest_interactable()
+	_check(nearest.get("name", "") == "Cleaner", "at z=%.2f E targets the cleaner (got %s)" % [z, nearest.get("name", "<nothing>")])
+	await _press("interact")
