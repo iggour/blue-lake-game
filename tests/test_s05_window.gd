@@ -30,7 +30,7 @@ func _run() -> void:
 
 	await _press_e_expecting("Window")
 	_check(main.s05_window_observed, "E observes 《窗》")
-	_check(main.dialogue_label.text.contains("红房子"), "the painting shows the red house")
+	_check(main.dialogue_label.text.contains("蓝天") and not main.dialogue_label.text.contains("红房子"), "from the gallery 《窗》 is only a window (no house)")
 	await _shot("s05_1_window")
 	await _press("blue_lake")
 	await main.blue_lake_transform.finished
@@ -45,6 +45,8 @@ func _run() -> void:
 	await create_timer(0.8).timeout
 	_check(main.s05_room == "hall", "the landscape grows into the hall")
 	_check(main.s05_labeled, "the cleaner tags Graham from afar")
+	var land_z: float = main._s05_player_z()
+	_check(land_z >= main.S05_BACK_WINDOW_Z.x and land_z <= main.S05_BACK_WINDOW_Z.y and main.player.position.x < 260.0, "Graham lands right beside 《窗》 (x=%d, z=%.2f)" % [main.player.position.x, land_z])
 	await _shot("s05_3_hall")
 	await _drain()
 
@@ -60,7 +62,11 @@ func _run() -> void:
 	await _e_at("Bucket")
 	_check(main.dialogue_label.text.contains("楼下"), "the bucket leaked to the floor below (《那喀索斯》's water)")
 	await _e_at("Mural")
-	_check(main.dialogue_label.text.contains("美术馆"), "the red house is the museum")
+	_check(main.dialogue_label.text.contains("美术馆") and main.dialogue_label.text.contains("窗"), "the red house (with windows) is the museum")
+	await _e_at("Pile")
+	_check(main.dialogue_label.text.contains("搬了下来"), "the exhibits were taken off the rack and piled up")
+	await _e_at("Rack")
+	_check(main.dialogue_label.text.contains("空着"), "the rack is empty except the fogged case")
 	await _e_at("BlindStation")
 	_check(main.dialogue_label.text.contains("最后一行"), "《盲》 points at the chart's last row")
 	await _e_at("AiwsSample")
@@ -72,16 +78,17 @@ func _run() -> void:
 	await _shot("s05_6_cleaner")
 	await _drain()
 
-	# Push the lens down the rail until it is big enough for him to see.
-	for i in range(4):
-		await _e_at("Lens", -0.05)
-	_check(main.s05_lens_notch == 5, "lens pushed to the far end (notch %d)" % main.s05_lens_notch)
-	_check(main.s05_lens_clean, "near him, the cleaner sees the lens and cleans it")
+	# Push the lens down the rail into the marked cleaning zone; the dialogue counts the notches left.
+	await _e_at("Lens", -0.12)
+	_check(main.s05_lens_notch == 3 and main.dialogue_label.text.contains("还有 1 格"), "pushing tells how many notches are left to the cleaning zone")
+	await _e_at("Lens", -0.12)
+	_check(main.s05_lens_notch == main.S05_CLEAN_NOTCH, "lens in the cleaning zone (notch %d)" % main.s05_lens_notch)
+	_check(main.s05_lens_clean, "in the cleaning zone, the cleaner sees the lens and cleans it")
 	await _drain()
 	await _e_at("Eyepiece")
-	_check(not main.s05_cell_seen and main.dialogue_label.text.contains("太远"), "clean but out of focus")
+	_check(not main.s05_cell_seen and main.dialogue_label.text.contains("回拉 3 格"), "clean but out of focus: says which way and how far")
 	for i in range(3):
-		await _e_at("Lens", 0.05)
+		await _e_at("Lens", 0.12)
 	_check(main.s05_lens_notch == main.S05_FOCUS_NOTCH, "lens pulled back into focus")
 	await _e_at("Eyepiece")
 	_check(main.s05_cell_seen, "in focus: the last cell is not empty")
