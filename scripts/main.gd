@@ -6,18 +6,58 @@ const TransitionScript := preload("res://scripts/transition_overlay.gd")
 const BlueLakeTransformScript := preload("res://scripts/blue_lake_transform.gd")
 const ChapterStateScript := preload("res://scripts/chapter_state.gd")
 # S01 entrance hall. From afar the wall is a face: 《观看的永恒》 and 《这不是一只眼睛》 are the eyes,
-# the key hook is the nose and the exit door is the mouth.
+# the "出口" sign over the door is the nose and the exit door is the mouth.
 const S01_PHOTO_RECT := Rect2(110, 215, 140, 100)
 const S01_MAP_RECT := Rect2(270, 225, 80, 90)
 const S01_CLOCKS_RECT := Rect2(430, 185, 190, 110)
 const S01_CLOCK_BACK := Vector2(470, 236)      # left melting eye: its hands turn the photo back
 const S01_CLOCK_FORWARD := Vector2(585, 236)   # right melting eye: forward, and then it melts
 const S01_DOOR_RECT := Rect2(680, 282, 80, 90)
-const S01_HOOK := Vector2(720, 266)
+const S01_SIGN := Vector2(720, 262)            # the "出口" sign: the face's nose
 const S01_EYE_RECT := Rect2(850, 185, 120, 110)
 const S01_EYE_CENTER := Vector2(910, 236)
 const S01_PHOTO_ERAS := ["开幕日", "冬天", "多年以后"]
 const S01_HINT_AFTER := 12.0                   # seconds without progress before the eye starts hinting
+# 《观看的永恒》 keeps the photo's era: warm opening day, winter, years of dust.
+const S01_CLOCK_SKY := [Color("#d9a95e"), Color("#a9bccb"), Color("#76786f")]
+const S01_CLOCK_GROUND := [Color("#c49a5e"), Color("#e8eef2"), Color("#7b766c")]
+# The community map is a maze of sulci on a 13 × 7 grid (x 0..12 = front of the head .. back).
+# The red "你在这里" dot starts at the back, inside a round printed gyrus; the grooves form a tree,
+# and the one way to "出口" at the front draws a key's blade and teeth (the gyrus is its bow).
+# The first path is the solution; the others are dead-end grooves branching off it.
+const S01_MAZE_START := Vector2i(11, 3)
+const S01_MAZE_GOAL := Vector2i(0, 3)
+const S01_MAZE_PATHS := [
+	[Vector2i(11, 3), Vector2i(10, 3), Vector2i(9, 3), Vector2i(8, 3), Vector2i(7, 3), Vector2i(6, 3), Vector2i(5, 3), Vector2i(4, 3), Vector2i(4, 4), Vector2i(3, 4), Vector2i(3, 3), Vector2i(2, 3), Vector2i(2, 4), Vector2i(1, 4), Vector2i(1, 3), Vector2i(0, 3)],
+	[Vector2i(9, 3), Vector2i(9, 2), Vector2i(9, 1), Vector2i(8, 1), Vector2i(7, 1), Vector2i(7, 0)],
+	[Vector2i(9, 1), Vector2i(10, 1)],
+	[Vector2i(7, 3), Vector2i(7, 4), Vector2i(7, 5), Vector2i(8, 5), Vector2i(9, 5), Vector2i(9, 4)],
+	[Vector2i(7, 5), Vector2i(7, 6), Vector2i(6, 6)],
+	[Vector2i(6, 3), Vector2i(6, 2), Vector2i(5, 2), Vector2i(4, 2), Vector2i(4, 1), Vector2i(3, 1), Vector2i(2, 1), Vector2i(2, 2), Vector2i(1, 2)],
+	[Vector2i(4, 1), Vector2i(4, 0), Vector2i(5, 0)],
+	[Vector2i(6, 2), Vector2i(6, 1), Vector2i(6, 0)],
+	[Vector2i(5, 3), Vector2i(5, 4), Vector2i(5, 5), Vector2i(4, 5), Vector2i(3, 5), Vector2i(2, 5)],
+	[Vector2i(4, 5), Vector2i(4, 6)],
+	[Vector2i(8, 3), Vector2i(8, 4)],
+	[Vector2i(1, 4), Vector2i(1, 5)]
+]
+const S01_MAZE_ROOM_AREA := Rect2(283, 257, 54, 30)   # the grid on the small map on the wall
+const S01_MAZE_BIG_AREA := Rect2(95, 100, 504, 216)   # the grid in the map's close-up (its own space)
+# Close-ups (特写): where each one sits on screen; its content is drawn in a space of that size.
+const CLOSEUP_RECTS := {
+	"photo": Rect2(316, 85, 520, 380),
+	"map": Rect2(226, 85, 700, 380),
+	"clocks": Rect2(296, 105, 560, 340),
+	"door": Rect2(406, 85, 340, 380),
+	"eye": Rect2(356, 95, 440, 360)
+}
+const CLOSEUP_OPEN_TIME := 0.28
+const CLOSEUP_ANIM_TIME := {
+	"chalk": 2.0, "key": 2.2, "door": 2.2, "turn": 0.9, "splat": 0.9, "eyelid": 1.6,
+	"snip": 1.0, "dab": 1.4, "heads": 0.9, "giant": 2.0, "lamp": 1.4, "shovel": 1.2, "pages": 1.6
+}
+const S01_HAND_SPEED := 260.0                  # Graham's hand over the photo (its own space)
+const S01_HAND_START := Vector2(380, 352)
 
 # S02 second hall, "表与里": the invisible mirror runs through 《机械维纳斯》 at this x.
 # Left of it is the warm 表 (the S01 carpet continues), right of it the cold 里.
@@ -158,8 +198,21 @@ var s01_gate_open := false
 var s01_interactables: Array[Dictionary] = []
 var s01_era := 1                      # the photo is titled 开幕日 but starts in winter
 var s01_melt := 0                     # 0..3: the right eye melts onto the floor, the door rusts through
-var s01_key_on_hook := false          # mirrors the photo: the key hangs there only on opening day
+var s01_has_chalk := false            # handed out of the opening-day photo by the blue-eyed girl
+var s01_has_key := false              # drawn on the map with the chalk, lifted off the paper
+var s01_maze_path: Array[Vector2i] = []   # the chalk line on the map, from "你在这里" to the red dot
+var s01_maze_adj := {}                # Vector2i -> Array of the grooves' neighbours
 var s01_exit_route := ""              # "past" (the key) or "future" (rusted through)
+var s01_photo_hand := Vector2(380, 352)   # Graham's hand over the photo, in the photo's own space
+# What touching the people in the photo has changed (each shows somewhere else too):
+var s01_ribbon_cut := false           # the guard cut the ribbon: a stub stays tied to the door in later eras
+var s01_restorer_dab := false         # the restorer's stroke on the photo's glass, and on 《观看的永恒》's frame
+var s01_visitors_turned := false      # the visitors look out of the photo, faceless
+var s01_cleaner_waved := false        # the cleaner grew over the roof: broom marks on the map's corner
+var s01_lamp_fixed := false           # Graham fixed the lamp in winter: the hall's 出口 sign stops humming
+var s01_snow_out := false             # a shovelful of snow flew out of the photo onto the hall's floor
+var s01_book_open := false            # the blue book leafed through itself: a small handprint
+var hyper_textures := {}              # procedural placeholder textures for the hyper-real inserts
 var s01_clocks_seen := false
 var s01_face_noticed := false
 var s01_idle_time := 0.0
@@ -167,6 +220,15 @@ var s01_eye_look := Vector2(910, 440) # where 《这不是一只眼睛》 is loo
 var s01_eye_visits := 0
 var s01_eyelid_closed := false
 var s01_dark_overlay: ColorRect
+var closeup := ""                     # "" or what is being looked at up close (特写)
+var closeup_t := 0.0                  # 0..1 while it grows from the wall to the middle
+var closeup_closing := false
+var closeup_from := Rect2()           # where it hangs in the room
+var closeup_anim := ""                # something happening inside the close-up
+var closeup_anim_t := 0.0
+var closeup_prev_era := 1             # 《观看的永恒》 slides from this era while a hand turns
+var closeup_prev_melt := 0
+var closeup_layer: Node2D             # drawn above Graham
 var s02_active := false
 var s02_completion_started := false
 var s02_guard_asked := false
@@ -308,8 +370,9 @@ func _ready() -> void:
 	_build_cursor()
 	_build_transition()
 	_build_blue_lake_transform()
+	_build_closeup_layer()
 	if LEGACY_PROTOTYPE_FLOW_ENABLED:
-		_show_dialogue("蓝湖：这里像是一座美术馆。\n格雷汉·斯蒂尔：先找出口。")
+		_show_dialogue("LAN：这里像是一座美术馆。\n格雷汉·斯蒂尔：先找出口。")
 		var tutorial_timer := get_tree().create_timer(6.0)
 		tutorial_timer.timeout.connect(_hide_tutorial)
 	else:
@@ -325,6 +388,7 @@ func _process(delta: float) -> void:
 	_update_chalk_hover()
 	_update_interaction_hint()
 	_update_s01(delta)
+	_update_closeup(delta)
 	_update_s02(delta)
 	_update_s03(delta)
 	_update_s04(delta)
@@ -565,6 +629,21 @@ func _draw_s01_gallery() -> void:
 	_draw_s01_door()
 	_draw_s01_not_an_eye()
 	draw_string(ThemeDB.fallback_font, Vector2(112, 492), "入口", HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color("#a8957a"))
+	# The shovelful of snow that flew out of the winter photo: it lies by the carpet and does not melt.
+	if s01_snow_out:
+		for b in [[Vector2(196, 400), 14.0], [Vector2(212, 403), 10.0], [Vector2(184, 404), 8.0]]:
+			var bc: Vector2 = b[0]
+			var br: float = b[1]
+			draw_set_transform(bc, 0.0, Vector2(1.0, 0.5))
+			draw_circle(Vector2.ZERO, br, Color("#f4f6f8"))
+			draw_set_transform(Vector2.ZERO)
+	# What Graham is holding: the chalk from the photo, then the chalk key from the map.
+	if s01_active and player and s01_has_chalk and not s01_gate_open:
+		var hand := player.position + Vector2(18, 10)
+		if s01_has_key:
+			_s01_draw_key_shape(self, hand, Vector2(1.3, 1.6), Color("#f4f6f8"), 1.4)
+		else:
+			draw_rect(Rect2(hand, Vector2(7, 2.6)), Color("#f4f6f8"), true)
 
 func _draw_s01_figure(at: Vector2, body: Color, scale_factor: float = 1.0) -> void:
 	draw_circle(at, 3.2 * scale_factor, Color("#d9c3a5"))
@@ -576,7 +655,7 @@ func _draw_s01_photo() -> void:
 	var inner := r.grow(-8.0)
 	var tone: Color = [Color("#8a7350"), Color("#a9bac4"), Color("#5f6466")][s01_era]
 	# Outside the museum: the red house (the same house as the mural behind 《窗》), photographed
-	# from the street. Its door and the hook beside it are the door and hook of this hall.
+	# from the street.
 	var sky: Color = [Color("#c9d8c6"), Color("#dde6ea"), Color("#7d8284")][s01_era]
 	var wall: Color = [Color("#b0503a"), Color("#a2685c"), Color("#6e5650")][s01_era]
 	draw_rect(inner, sky, true)
@@ -587,31 +666,36 @@ func _draw_s01_photo() -> void:
 		draw_rect(Rect2(facade.position + wpos, Vector2(12, 11)), Color("#f4e7b8").lerp(tone, 0.4), true)
 	if s01_era == 1:
 		draw_colored_polygon(PackedVector2Array([facade.position + Vector2(-6, 0), Vector2(facade.end.x + 6, facade.position.y), Vector2(facade.end.x - 4, facade.position.y - 4), facade.position + Vector2(4, -4)]), Color("#f4f6f8"))
-	# The photographed door is this hall's door: the same door, the same hook.
 	var door := Rect2(inner.position + Vector2(52, 28), Vector2(20, 34))
 	draw_rect(door, Color("#7a4a30") if s01_era == 2 else Color("#2c3640"), true)
-	var hook := door.position + Vector2(10, -6)
-	draw_line(hook, hook + Vector2(0, 3), Color("#2a2a2a"), 1.5)
 	var floor_y := inner.end.y - 10.0
 	draw_line(Vector2(inner.position.x, floor_y + 4.0), Vector2(inner.end.x, floor_y + 4.0), tone.darkened(0.3), 1.0)
 	if s01_era == 0:
-		# Opening day: the guard hangs the keys by the door; the restorer and the visitor are in the crowd.
-		draw_circle(hook + Vector2(0, 5), 2.2, Color("#f0cf6a"))
+		# Opening day: the guard with the big scissors; the restorer and the visitor are in the crowd.
 		_draw_s01_figure(Vector2(door.end.x + 9.0, floor_y - 14.0), Color("#566b7a"))
 		_draw_s01_figure(Vector2(inner.position.x + 14.0, floor_y - 14.0), Color("#b26b5e"))
 		_draw_s01_figure(Vector2(inner.position.x + 30.0, floor_y - 14.0), Color("#6c8290"))
 		for i in range(3):
 			_draw_s01_figure(Vector2(inner.end.x - 28.0 + i * 9.0, floor_y - 13.0), Color("#7a6a5a"), 0.9)
+		if s01_visitors_turned:
+			# They look out of the photo now: pale, featureless faces.
+			for vx in [inner.position.x + 30.0, inner.end.x - 28.0, inner.end.x - 19.0, inner.end.x - 10.0]:
+				draw_circle(Vector2(vx, floor_y - 14.0), 2.6, Color("#f3e8d6"))
 		draw_string(ThemeDB.fallback_font, inner.position + Vector2(4, 12), "OPENING", HORIZONTAL_ALIGNMENT_LEFT, -1, 9, Color(0.35, 0.2, 0.1, 0.8))
 		# Cutting the ribbon in front of the red house.
-		draw_line(Vector2(inner.position.x + 8, door.position.y + 20), Vector2(inner.end.x - 8, door.position.y + 20), Color("#d8202a"), 2.0)
-		draw_circle(Vector2(door.get_center().x, door.position.y + 20), 3.0, Color("#d8202a"))
+		if s01_ribbon_cut:
+			draw_line(Vector2(inner.position.x + 8, door.position.y + 20), Vector2(door.get_center().x - 2, door.position.y + 26), Color("#d8202a"), 2.0)
+			draw_line(Vector2(inner.end.x - 8, door.position.y + 20), Vector2(door.get_center().x + 2, door.position.y + 26), Color("#d8202a"), 2.0)
+		else:
+			draw_line(Vector2(inner.position.x + 8, door.position.y + 20), Vector2(inner.end.x - 8, door.position.y + 20), Color("#d8202a"), 2.0)
+			draw_circle(Vector2(door.get_center().x, door.position.y + 20), 3.0, Color("#d8202a"))
 		# Blue Lake was already here, years ago, in another form: a small girl with blue eyes in the crowd.
 		_draw_s01_blue_lake_trace(Vector2(inner.position.x + 43.0, floor_y - 9.0), 0)
 	elif s01_era == 1:
 		# Winter: snow falling, coats, and someone up a ladder fixing the lamp over the door.
-		for i in range(10):
-			draw_circle(inner.position + Vector2(4 + (i * 13) % int(inner.size.x - 8), 3 + (i * 7) % int(inner.size.y - 10)), 1.1, Color.WHITE)
+		draw_rect(Rect2(inner.position.x, floor_y + 4.0, inner.size.x, 4.0), Color("#f4f6f8"), true)
+		if s01_lamp_fixed:
+			draw_circle(Vector2(door.get_center().x, door.position.y - 3.0), 5.0, Color(1.0, 0.92, 0.6, 0.6))
 		var ladder_x := inner.end.x - 22.0
 		draw_line(Vector2(ladder_x, floor_y + 3.0), Vector2(ladder_x + 6.0, inner.position.y + 20.0), Color("#5b4a3a"), 1.5)
 		draw_line(Vector2(ladder_x + 10.0, floor_y + 3.0), Vector2(ladder_x + 12.0, inner.position.y + 20.0), Color("#5b4a3a"), 1.5)
@@ -621,19 +705,27 @@ func _draw_s01_photo() -> void:
 		# ...a white bear with blue eyes, left on the floor under the window.
 		_draw_s01_blue_lake_trace(Vector2(inner.position.x + 40.0, floor_y), 1)
 	else:
-		# Many years later: nobody, dust, a cobweb in the corner.
+		# Many years later: nobody, dust, a cobweb in the corner, the door boarded up.
 		for i in range(14):
 			draw_circle(inner.position + Vector2((i * 37) % int(inner.size.x), (i * 23) % int(inner.size.y)), 0.9, Color(1, 1, 1, 0.35))
-		draw_line(inner.position, inner.position + Vector2(16, 0), Color(1, 1, 1, 0.3), 1.0)
-		draw_line(inner.position, inner.position + Vector2(0, 14), Color(1, 1, 1, 0.3), 1.0)
-		draw_line(inner.position, inner.position + Vector2(12, 10), Color(1, 1, 1, 0.3), 1.0)
+		draw_arc(inner.position + Vector2(18, 14), 9.0, 0.0, TAU, 16, Color(0.45, 0.33, 0.18, 0.5), 1.0)
+		draw_arc(inner.end - Vector2(20, 22), 12.0, 0.0, TAU, 16, Color(0.45, 0.33, 0.18, 0.45), 1.0)
+		draw_line(door.position + Vector2(0, 8), door.end - Vector2(0, 10), Color("#a88a62"), 2.0)
 		# ...a book with a blue cover and white pages, the only thing left in the empty hall.
 		_draw_s01_blue_lake_trace(Vector2(inner.position.x + 30.0, floor_y + 1.0), 2)
+		if s01_book_open:
+			draw_rect(Rect2(Vector2(inner.position.x + 26.0, floor_y - 3.0), Vector2(8, 3)), Color("#f4f6f8"), true)
+	if s01_ribbon_cut and s01_era > 0:
+		draw_line(door.end - Vector2(4, 18), door.end - Vector2(3, 10), Color("#b2433a"), 1.5)
+	# The restorer's stroke is on the glass, whatever era the photo shows.
+	if s01_restorer_dab:
+		draw_line(inner.position + Vector2(10, 22), inner.position + Vector2(30, 18), Color(0.12, 0.42, 0.72, 0.85), 2.0)
 	draw_string(ThemeDB.fallback_font, Vector2(r.position.x + 2, 340), "《美术馆开幕日》", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#e8dfc8"))
 
 ## Blue Lake hides in every chapter as something white-and-blue that can become something else.
 ## In the S01 photo: a blue-eyed girl (opening day), a white bear (winter), a blue book (years later).
 ## No dialogue points at them; they are there to be noticed, now or on a later visit.
+## Only the girl has hands: she is the one who can pass Graham the chalk.
 func _draw_s01_blue_lake_trace(at: Vector2, form: int) -> void:
 	var blue := Color("#2f86e0")
 	if form == 0:
@@ -641,6 +733,8 @@ func _draw_s01_blue_lake_trace(at: Vector2, form: int) -> void:
 		draw_colored_polygon(PackedVector2Array([at + Vector2(-2.5, 2.5), at + Vector2(2.5, 2.5), at + Vector2(4.0, 10.0), at + Vector2(-4.0, 10.0)]), Color("#f4f6f8"))
 		draw_rect(Rect2(at + Vector2(-1.6, -0.6), Vector2(1.2, 1.2)), blue, true)
 		draw_rect(Rect2(at + Vector2(0.6, -0.6), Vector2(1.2, 1.2)), blue, true)
+		if not s01_has_chalk:
+			draw_rect(Rect2(at + Vector2(3.5, 1.0), Vector2(3.2, 1.3)), Color.WHITE, true)
 	elif form == 1:
 		draw_circle(at + Vector2(0, -3), 3.2, Color("#f4f6f8"))
 		draw_circle(at + Vector2(-2.6, -6), 1.3, Color("#f4f6f8"))
@@ -657,20 +751,12 @@ func _draw_s01_map() -> void:
 	draw_rect(r, Color("#8a6f4a"), true)
 	draw_rect(r.grow(-4.0), Color("#d8cfb5"), true)
 	# The Truth Community seen from above, shaped like a brain; "you are here" at the back of the head.
-	var c := r.get_center() + Vector2(0, 2)
-	var pts := PackedVector2Array()
-	for i in range(28):
-		var a := TAU * i / 28.0
-		var rr := 30.0 + 3.0 * sin(a * 5.0)
-		pts.append(c + Vector2(cos(a) * rr, sin(a) * rr * 0.72))
-	pts.append(pts[0])
-	draw_polyline(pts, Color("#6b5a44"), 1.5)
-	draw_line(c + Vector2(-4, -20), c + Vector2(2, 18), Color("#6b5a44"), 1.0)
-	draw_arc(c + Vector2(-12, -2), 8.0, 0.5, 2.6, 8, Color("#6b5a44"), 1.0)
-	draw_arc(c + Vector2(12, 4), 8.0, 3.6, 5.8, 8, Color("#6b5a44"), 1.0)
-	draw_circle(c + Vector2(26, 6), 3.0, Color("#c4372f"))
+	# Whatever was drawn in the close-up shows here too: the chalk line, where the red dot stopped,
+	# and later the key-shaped blank where the key came off the paper.
+	_s01_draw_map_on(self, S01_MAZE_ROOM_AREA, false)
 	draw_string(ThemeDB.fallback_font, Vector2(r.position.x + 2, 340), "导览图", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#e8dfc8"))
 
+## The clock-eyes. Each painting keeps the photo's era: warm, snowing, or grey with dust.
 func _draw_s01_clock_eye(center: Vector2, turns: int, melt: int) -> void:
 	if melt >= 3:
 		# The right eye is gone: an empty, dark socket and a long dried trail.
@@ -691,10 +777,19 @@ func _draw_s01_clocks() -> void:
 	var r := S01_CLOCKS_RECT
 	draw_rect(r, Color("#c7a56f"), true)
 	var inner := r.grow(-8.0)
-	draw_rect(inner, Color("#7d8776"), true)
-	draw_rect(Rect2(inner.position.x, inner.end.y - 26.0, inner.size.x, 26.0), Color("#a48d68"), true)
+	var bg: Color = S01_CLOCK_SKY[s01_era]
+	var ground: Color = S01_CLOCK_GROUND[s01_era]
+	draw_rect(inner, bg, true)
+	draw_rect(Rect2(inner.position.x, inner.end.y - 26.0, inner.size.x, 26.0), ground, true)
 	draw_line(Vector2(inner.position.x + 60, inner.end.y - 26), Vector2(inner.position.x + 120, inner.position.y + 30), Color("#4f5d60"), 5.0)
-	_draw_s01_clock_eye(S01_CLOCK_BACK, -(1 - s01_era) if s01_era <= 1 else 0, 0)
+	if s01_era == 1:
+		for corner in [inner.position, Vector2(inner.end.x, inner.position.y)]:
+			for k in range(3):
+				var dir: Vector2 = (inner.get_center() - corner).normalized().rotated((k - 1) * 0.35)
+				draw_line(corner, corner + dir * 16.0, Color(0.93, 0.97, 1.0, 0.8), 1.0)
+	elif s01_era == 2:
+		draw_polyline(PackedVector2Array([inner.position + Vector2(130, 0), inner.position + Vector2(122, 30), inner.position + Vector2(136, 52), inner.position + Vector2(128, 94)]), Color(0.15, 0.15, 0.15, 0.6), 1.0)
+	_draw_s01_clock_eye(S01_CLOCK_BACK, _s01_left_turns(s01_era), 0)
 	_draw_s01_clock_eye(S01_CLOCK_FORWARD, s01_era + s01_melt, s01_melt)
 	if s01_melt >= 1:
 		# It runs out of the frame and down the wall.
@@ -705,7 +800,12 @@ func _draw_s01_clocks() -> void:
 		draw_set_transform(Vector2(S01_CLOCK_FORWARD.x + 4.0, 384), 0.0, Vector2(1.0, 0.32))
 		draw_circle(Vector2.ZERO, 14.0 + s01_melt * 7.0, Color("#e2dccb"))
 		draw_set_transform(Vector2.ZERO)
+	if s01_restorer_dab:
+		draw_line(r.position + Vector2(4, r.size.y - 4), r.position + Vector2(26, r.size.y - 7), Color(0.12, 0.42, 0.72, 0.9), 3.0)
 	draw_string(ThemeDB.fallback_font, Vector2(r.position.x + 44, 318), "《观看的永恒》", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color("#e8dfc8"))
+
+func _s01_left_turns(era: int) -> int:
+	return -(1 - era) if era <= 1 else 0
 
 func _draw_s01_door() -> void:
 	var r := S01_DOOR_RECT
@@ -721,14 +821,40 @@ func _draw_s01_door() -> void:
 		for i in range(5 + s01_melt * 3):
 			var p := inner.position + Vector2(fmod(i * 23.0, inner.size.x), fmod(i * 31.0, inner.size.y))
 			draw_circle(p, 3.0 + (i % 3), Color(0.55, 0.3, 0.16, 0.85))
-	draw_string(ThemeDB.fallback_font, Vector2(r.position.x + 26, r.position.y + 20), "出口", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color("#d9d4b6"))
-	# The hook sits between the two eyes, where a nose would be.
-	draw_line(S01_HOOK + Vector2(-5, -4), S01_HOOK + Vector2(5, -4), Color("#8d7b5c"), 2.0)
-	draw_arc(S01_HOOK + Vector2(0, 2), 4.0, 0.0, PI, 8, Color("#b59f73"), 2.0)
-	if s01_key_on_hook and not s01_gate_open:
-		draw_circle(S01_HOOK + Vector2(0, 9), 4.0, Color("#f0cf6a"))
-		draw_line(S01_HOOK + Vector2(0, 12), S01_HOOK + Vector2(0, 22), Color("#f0cf6a"), 2.5)
-		draw_line(S01_HOOK + Vector2(0, 20), S01_HOOK + Vector2(4, 20), Color("#f0cf6a"), 2.0)
+	_draw_s01_sign()
+
+## The "出口" sign over the door is the face's nose. It ages with the clock-eyes: brand new and
+## glaring on opening day, humming in winter, dark and hanging crooked years later, and once the
+## eye has melted onto the floor it falls down too.
+func _draw_s01_sign() -> void:
+	var s := S01_SIGN
+	var font := ThemeDB.fallback_font
+	if s01_melt >= 2:
+		draw_line(s + Vector2(-10, -12), s + Vector2(-10, -7), Color("#6d6250"), 1.5)
+		var fallen := PackedVector2Array([Vector2(732, 376), Vector2(764, 370), Vector2(766, 382), Vector2(734, 388)])
+		draw_colored_polygon(fallen, Color("#2f3f35"))
+		draw_polyline(PackedVector2Array([fallen[0], fallen[1], fallen[2], fallen[3], fallen[0]]), Color("#56604f"), 1.0)
+		return
+	if s01_era == 2:
+		# One chain left: it hangs from its left corner.
+		draw_line(s + Vector2(-14, -12), s + Vector2(-14, -7), Color("#6d6250"), 1.5)
+		var pivot := s + Vector2(-16, -8)
+		var pts := PackedVector2Array()
+		for corner in [Vector2(0, 0), Vector2(32, 0), Vector2(32, 16), Vector2(0, 16)]:
+			pts.append(pivot + corner.rotated(0.38))
+		draw_colored_polygon(pts, Color("#2f3f35"))
+		draw_polyline(PackedVector2Array([pts[0], pts[1], pts[2], pts[3], pts[0]]), Color("#56604f"), 1.0)
+		return
+	var glow := 0.22 if s01_era == 0 else 0.12
+	if s01_era == 1 and not s01_lamp_fixed:
+		# Humming and flickering, until Graham fixes the lamp in the winter photo.
+		glow *= 0.6 + 0.4 * absf(sin(Time.get_ticks_msec() * 0.023) * sin(Time.get_ticks_msec() * 0.007))
+	draw_circle(s, 30.0 if s01_era == 0 else 20.0, Color(0.35, 1.0, 0.55, glow * 0.6))
+	draw_circle(s, 18.0, Color(0.35, 1.0, 0.55, glow))
+	for cx in [-12.0, 12.0]:
+		draw_line(s + Vector2(cx, -14), s + Vector2(cx, -8), Color("#8d7b5c"), 1.5)
+	draw_rect(Rect2(s - Vector2(16, 8), Vector2(32, 16)), Color("#3fdc7a") if s01_era == 0 else Color("#2fae5f"), true)
+	draw_string(font, s + Vector2(-11, 5), "出口", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color.WHITE)
 
 func _draw_s01_not_an_eye() -> void:
 	var r := S01_EYE_RECT
@@ -749,6 +875,822 @@ func _draw_s01_not_an_eye() -> void:
 		draw_circle(pupil, 4.5, Color("#151a1f"))
 	draw_string(ThemeDB.fallback_font, Vector2(r.position.x + 22, r.end.y - 14), "这不是一只眼睛", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color("#e8e2d0"))
 	draw_string(ThemeDB.fallback_font, Vector2(r.position.x - 6, 318), "《这不是一只眼睛》", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#e8dfc8"))
+
+## --- The map, drawn on any canvas (the small one on the wall, or the close-up) -----------------
+func _s01_maze_pos(n: Vector2i, area: Rect2) -> Vector2:
+	return area.position + Vector2(n.x * area.size.x / 12.0, n.y * area.size.y / 6.0)
+
+func _s01_ring(c: Vector2, rx: float, ry: float, n: int = 32) -> PackedVector2Array:
+	var pts := PackedVector2Array()
+	for i in range(n + 1):
+		var a := TAU * i / float(n)
+		pts.append(c + Vector2(cos(a) * rx, sin(a) * ry))
+	return pts
+
+## The key: the round gyrus around "你在这里" is the bow, the solved path is the blade and the teeth.
+## `origin` is where the blade's tip (the goal) sits; `cell` is one maze step.
+func _s01_draw_key_shape(ci: CanvasItem, origin: Vector2, cell: Vector2, color: Color, width: float, angle: float = 0.0) -> void:
+	var path: Array = S01_MAZE_PATHS[0]
+	var pts := PackedVector2Array()
+	for node in path:
+		var n: Vector2i = node
+		pts.append(origin + (Vector2(n.x - S01_MAZE_GOAL.x, n.y - S01_MAZE_GOAL.y) * cell).rotated(angle))
+	ci.draw_polyline(pts, color, width)
+	var bow := _s01_ring(Vector2.ZERO, cell.x * 0.75, cell.y * 0.85, 20)
+	var bow_center := Vector2(S01_MAZE_START.x - S01_MAZE_GOAL.x + 0.25, 0) * cell
+	for i in range(bow.size()):
+		bow[i] = origin + (bow_center + bow[i]).rotated(angle)
+	ci.draw_polyline(bow, color, width)
+
+func _s01_draw_map_on(ci: CanvasItem, area: Rect2, big: bool) -> void:
+	var cell := Vector2(area.size.x / 12.0, area.size.y / 6.0)
+	var ink := Color("#6b5a44")
+	var center := area.get_center()
+	# The outline of the brain, a little bumpy, with the cerebellum tucked under the back.
+	var outline := PackedVector2Array()
+	for i in range(48):
+		var a := TAU * i / 48.0
+		var wob := 1.0 + 0.035 * sin(a * 9.0)
+		outline.append(center + Vector2(cos(a) * (area.size.x * 0.5 + cell.x * 0.95) * wob, sin(a) * (area.size.y * 0.5 + cell.y * 0.95) * wob))
+	var back := center + Vector2(area.size.x * 0.36, area.size.y * 0.52)
+	if big:
+		var lobe := _s01_ring(back, cell.x * 1.6, cell.y * 1.0, 24)
+		lobe.remove_at(lobe.size() - 1)
+		ci.draw_colored_polygon(lobe, Color("#d8ccaa"))
+		ci.draw_polyline(_s01_ring(back, cell.x * 1.6, cell.y * 1.0, 24), ink, 2.0)
+	ci.draw_colored_polygon(outline, Color("#e6dcc0"))
+	var closed := outline.duplicate()
+	closed.append(outline[0])
+	ci.draw_polyline(closed, ink, 3.0 if big else 1.5)
+	# The sulci: the maze's grooves.
+	var groove_w := cell.y * 0.42 if big else 1.4
+	for node in s01_maze_adj:
+		var a: Vector2i = node
+		for other in s01_maze_adj[a]:
+			var b: Vector2i = other
+			if a.x < b.x or (a.x == b.x and a.y < b.y):
+				ci.draw_line(_s01_maze_pos(a, area), _s01_maze_pos(b, area), Color("#b8a47c") if big else Color(0.42, 0.35, 0.27, 0.5), groove_w)
+	if big:
+		for node in s01_maze_adj:
+			var p := _s01_maze_pos(node, area)
+			ci.draw_circle(p, groove_w * 0.5, Color("#b8a47c"))
+	# The round gyrus around "你在这里" (printed; it becomes the key's bow).
+	var start := _s01_maze_pos(S01_MAZE_START, area)
+	var bow := _s01_ring(start + Vector2(cell.x * 0.25, 0), cell.x * 0.75, cell.y * 0.85)
+	ci.draw_polyline(bow, Color("#b8a47c") if big else Color(0.42, 0.35, 0.27, 0.5), groove_w)
+	var font := ThemeDB.fallback_font
+	var goal := _s01_maze_pos(S01_MAZE_GOAL, area)
+	if big:
+		ci.draw_string(font, start + Vector2(-34, -cell.y * 1.05), "你在这里", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color("#8a2a24"))
+		ci.draw_string(font, goal + Vector2(-cell.x * 0.95, -cell.y * 0.7), "出口", HORIZONTAL_ALIGNMENT_LEFT, -1, 16, ink)
+		ci.draw_line(goal + Vector2(-cell.x * 0.85, -cell.y * 0.5), goal + Vector2(-cell.x * 0.2, -cell.y * 0.1), ink, 1.5)
+	else:
+		ci.draw_line(goal + Vector2(-3, -3), goal + Vector2(-1, -1), ink, 1.0)
+	# The cleaner grew over the roof in the opening-day photo: his broom swept the map's corner.
+	if s01_cleaner_waved:
+		var corner := area.end + cell * Vector2(0.4, 0.2)
+		for k in range(4):
+			ci.draw_line(corner + Vector2(-k * cell.x * 0.18, 0), corner + Vector2(-k * cell.x * 0.18 - cell.x * 0.5, cell.y * 0.35), Color(0.42, 0.35, 0.27, 0.6), 2.0 if big else 0.8)
+	# What has been drawn on it.
+	var lifted := s01_has_key or (closeup == "map" and closeup_anim == "key" and closeup_anim_t > 0.35)
+	var dot := goal
+	if lifted:
+		# The key came off the paper and left its shape behind, blank.
+		_s01_draw_key_shape(ci, goal, cell, Color("#f8f3e3"), cell.y * 0.5 if big else 2.4)
+	else:
+		var chalk := PackedVector2Array()
+		for node in s01_maze_path:
+			chalk.append(_s01_maze_pos(node, area))
+		if chalk.size() >= 2:
+			ci.draw_polyline(chalk, Color("#fbfbf7"), cell.y * 0.16 if big else 1.2)
+		dot = chalk[chalk.size() - 1]
+	var pulse := 1.0 + 0.15 * sin(Time.get_ticks_msec() * 0.006) if big else 1.0
+	ci.draw_circle(dot, (cell.y * 0.26 if big else 2.6) * pulse, Color("#c4372f"))
+	if big and _s01_maze_active():
+		ci.draw_arc(dot, cell.y * 0.42 * pulse, 0.0, TAU, 20, Color(0.77, 0.22, 0.18, 0.5), 2.0)
+
+## --- Close-up drawing ---------------------------------------------------------------------------
+## Drawn on its own layer above Graham. The content of each close-up is drawn in its own space
+## (0..size), and that space is scaled from where the thing hangs to the middle of the screen.
+func _draw_closeup() -> void:
+	if closeup == "":
+		return
+	var cv: CanvasItem = closeup_layer
+	var e := closeup_t * closeup_t * (3.0 - 2.0 * closeup_t)
+	cv.draw_rect(Rect2(0, 58, 1152, 590), Color(0.02, 0.03, 0.05, 0.8 * e), true)
+	var kind := _closeup_kind()
+	var target: Rect2 = CLOSEUP_RECTS[kind]
+	var cur := Rect2(closeup_from.position.lerp(target.position, e), closeup_from.size.lerp(target.size, e))
+	cv.draw_set_transform(cur.position, 0.0, cur.size / target.size)
+	var sz := target.size
+	match kind:
+		"photo":
+			_draw_closeup_photo(cv, sz)
+		"map":
+			_draw_closeup_map(cv, sz)
+		"clocks":
+			_draw_closeup_clocks(cv, sz)
+		"door":
+			_draw_closeup_door(cv, sz)
+		"eye":
+			_draw_closeup_eye(cv, sz)
+	cv.draw_set_transform(Vector2.ZERO)
+	_draw_hyperreal(cv)
+
+## A person in the photo. `facing_out`: the face turned toward the viewer (blank, no features);
+## otherwise they are seen from behind, looking at the door.
+func _cv_figure(cv: CanvasItem, head: Vector2, body: Color, k: float, facing_out: bool = false) -> void:
+	cv.draw_rect(Rect2(head.x - 3.5 * k, head.y + 3.0 * k, 7.0 * k, 11.0 * k), body, true)
+	if facing_out:
+		cv.draw_circle(head, 3.2 * k, Color("#e6d3b8"))
+	else:
+		cv.draw_circle(head, 3.2 * k, Color("#d9c3a5"))
+		cv.draw_arc(head + Vector2(0, -0.4 * k), 3.0 * k, PI * 0.9, PI * 2.1, 10, Color("#5b4a3a"), 1.6 * k)
+
+func _s01_highlight(cv: CanvasItem, id: String) -> void:
+	if closeup_anim != "" or _s01_photo_spot_at(s01_photo_hand) != id:
+		return
+	for spot in _s01_photo_spots():
+		if spot.id == id:
+			var pos: Vector2 = spot.pos
+			var r: float = spot.r
+			cv.draw_arc(pos, r + 2.0 * sin(Time.get_ticks_msec() * 0.008), 0.0, TAU, 28, Color(1, 1, 1, 0.55), 2.0)
+
+func _draw_closeup_photo(cv: CanvasItem, sz: Vector2) -> void:
+	var font := ThemeDB.fallback_font
+	var era := s01_era
+	var t := closeup_anim_t
+	cv.draw_rect(Rect2(Vector2.ZERO, sz), Color("#c9ae78"), true)
+	cv.draw_rect(Rect2(Vector2(6, 6), sz - Vector2(12, 12)), Color("#a88a56"), false, 2.0)
+	var inner := Rect2(Vector2(18, 18), sz - Vector2(36, 36))
+	var sky: Color = [Color("#c9d8c6"), Color("#dde6ea"), Color("#7d8284")][era]
+	var wall: Color = [Color("#b0503a"), Color("#a2685c"), Color("#6e5650")][era]
+	var tone: Color = [Color("#8a7350"), Color("#a9bac4"), Color("#5f6466")][era]
+	var ground_y := 330.0
+	cv.draw_rect(inner, sky, true)
+	cv.draw_rect(Rect2(inner.position.x, ground_y, inner.size.x, inner.end.y - ground_y), tone.lightened(0.2), true)
+	# The red house: four windows and a door (the same house as the mural behind 《窗》).
+	var facade := Rect2(150, 120, 220, ground_y - 120)
+	cv.draw_rect(facade, wall, true)
+	cv.draw_colored_polygon(PackedVector2Array([Vector2(136, 122), Vector2(384, 122), Vector2(260, 54)]), wall.darkened(0.35))
+	for wp in [Vector2(172, 145), Vector2(318, 145), Vector2(172, 205), Vector2(318, 205)]:
+		cv.draw_rect(Rect2(wp, Vector2(30, 28)), Color("#f4e7b8").lerp(tone, 0.4), true)
+		cv.draw_line(wp + Vector2(15, 0), wp + Vector2(15, 28), wall.darkened(0.4), 2.0)
+	var door := Rect2(238, 248, 44, ground_y - 248)
+	cv.draw_rect(door, Color("#7a4a30") if era == 2 else Color("#2c3640"), true)
+	# The lamp over the door: Graham is fixing it in winter.
+	var lamp_on := era == 0 or (era == 1 and (s01_lamp_fixed or (closeup_anim == "lamp" and t > 0.5)))
+	if lamp_on:
+		cv.draw_circle(Vector2(260, 238), 22.0, Color(1.0, 0.92, 0.6, 0.35))
+	cv.draw_rect(Rect2(250, 234, 20, 9), Color("#fff2b8") if lamp_on else (Color("#8a8574") if era != 2 else Color("#6b6658")), true)
+	if s01_ribbon_cut and era > 0:
+		# What is left of the cut ribbon, tied to the door handle all these years.
+		cv.draw_line(Vector2(276, 292), Vector2(280, 318), Color("#c23a32").lerp(tone, 0.35 * era), 3.0)
+	match era:
+		0:
+			_draw_closeup_photo_opening(cv, ground_y, t)
+		1:
+			_draw_closeup_photo_winter(cv, ground_y, inner, t)
+		_:
+			_draw_closeup_photo_later(cv, ground_y, inner, door, t)
+	# The restorer's stroke is on the glass, so it stays whatever era the photo shows.
+	if s01_restorer_dab or (closeup_anim == "dab" and t > 0.55):
+		cv.draw_polyline(PackedVector2Array([Vector2(96, 196), Vector2(124, 186), Vector2(150, 194), Vector2(168, 184)]), Color(0.12, 0.42, 0.72, 0.85), 6.0)
+		cv.draw_circle(Vector2(170, 184), 3.5, Color(0.12, 0.42, 0.72, 0.85))
+	_draw_closeup_hand(cv)
+	cv.draw_string(font, Vector2(sz.x * 0.5 - 70, -10), "《美术馆开幕日》", HORIZONTAL_ALIGNMENT_LEFT, -1, 20, Color("#e8dfc8"))
+
+func _draw_closeup_photo_opening(cv: CanvasItem, ground_y: float, t: float) -> void:
+	var font := ThemeDB.fallback_font
+	cv.draw_string(font, Vector2(28, 40), "OPENING", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color(0.35, 0.2, 0.1, 0.8))
+	# The ribbon across the door; the guard's big scissors cut it.
+	var cut := s01_ribbon_cut or (closeup_anim == "snip" and t > 0.45)
+	var red := Color("#d8202a")
+	if cut:
+		var fall := 1.0 if s01_ribbon_cut else clampf((t - 0.45) / 0.4, 0.0, 1.0)
+		cv.draw_line(Vector2(110, 296), Vector2(254, 296 + 30 * fall), red, 4.0)
+		cv.draw_line(Vector2(410, 296), Vector2(266, 296 + 30 * fall), red, 4.0)
+	else:
+		cv.draw_line(Vector2(110, 296), Vector2(410, 296), red, 4.0)
+		cv.draw_circle(Vector2(260, 296), 7.0, red)
+	var turned := s01_visitors_turned or (closeup_anim == "heads" and t > 0.5)
+	# The guard, with the big scissors.
+	_cv_figure(cv, Vector2(320, ground_y - 50), Color("#566b7a"), 3.6)
+	var open_a := 0.35
+	if closeup_anim == "snip":
+		open_a = 0.35 * absf(cos(t * PI * 1.0))
+	elif s01_ribbon_cut:
+		open_a = 0.0
+	var pivot := Vector2(300, 296) if (closeup_anim == "snip" or not s01_ribbon_cut) else Vector2(326, 270)
+	for sgn in [-1.0, 1.0]:
+		cv.draw_line(pivot + Vector2(28, 0).rotated(sgn * open_a), pivot - Vector2(18, 0).rotated(sgn * open_a), Color("#9aa3a8"), 3.0)
+	cv.draw_circle(pivot - Vector2(20, 0), 3.0, Color("#3b3f46"))
+	_s01_highlight(cv, "guard")
+	# The restorer, brush in hand; she turns round and touches up the photo's glass.
+	var dab_k := 0.0
+	if closeup_anim == "dab":
+		dab_k = sin(clampf(t, 0.0, 1.0) * PI)
+	_cv_figure(cv, Vector2(70, ground_y - 50), Color("#b26b5e"), 3.6, dab_k > 0.2)
+	cv.draw_line(Vector2(84, 300), Vector2(96, 282).lerp(Vector2(110, 200), dab_k), Color("#7a5a3a"), 2.0 + 2.0 * dab_k)
+	_s01_highlight(cv, "restorer")
+	# The visitors look at the door; touched, they all turn to look out of the photo, faceless.
+	_cv_figure(cv, Vector2(112, ground_y - 50), Color("#6c8290"), 3.6, turned)
+	for i in range(3):
+		_cv_figure(cv, Vector2(400.0 + i * 24.0, ground_y - 46), Color("#7a6a5a"), 3.2, turned)
+	_s01_highlight(cv, "visitors")
+	# The cleaner, sweeping. Touched, he grows until he looks over the roof, then shrinks back.
+	var g := 0.0
+	if closeup_anim == "giant":
+		g = sin(clampf(t, 0.0, 1.0) * PI)
+	var cleaner_k := lerpf(3.0, 13.0, g)
+	var feet := Vector2(482, ground_y)
+	var head := feet - Vector2(0, 14.0 * cleaner_k)
+	_cv_figure(cv, head, Color("#5d7a5a"), cleaner_k)
+	cv.draw_line(feet + Vector2(-6 * cleaner_k * 0.3, -6), feet + Vector2(-22, 2) * (cleaner_k / 3.0), Color("#8a6a3a"), 2.0 + g * 4.0)
+	_s01_highlight(cv, "cleaner")
+	# On the pavement, in chalk: a round scribble with grooves and a dot at the back (the map).
+	var scribble := Vector2(150, 348)
+	cv.draw_polyline(_s01_ring(scribble, 22, 9, 24), Color(1, 1, 1, 0.85), 1.5)
+	cv.draw_polyline(PackedVector2Array([scribble + Vector2(-14, 0), scribble + Vector2(-6, -4), scribble + Vector2(2, 2), scribble + Vector2(10, -3)]), Color(1, 1, 1, 0.75), 1.2)
+	cv.draw_circle(scribble + Vector2(16, 1), 2.0, Color(1, 1, 1, 0.9))
+	_draw_closeup_girl(cv, Vector2(205, 300))
+	_s01_highlight(cv, "girl")
+	# Opening day: press cameras flash now and then.
+	var time := Time.get_ticks_msec() * 0.001
+	for k in range(3):
+		var phase := fmod(time * 0.45 + k * 0.41, 1.0)
+		if phase < 0.08:
+			var at: Vector2 = [Vector2(60, 230), Vector2(470, 210), Vector2(130, 120)][k]
+			var a := 1.0 - phase / 0.08
+			cv.draw_circle(at, 10.0 + 14.0 * a, Color(1, 1, 1, 0.5 * a))
+			for r in range(6):
+				var d := Vector2.RIGHT.rotated(r * TAU / 6.0 + 0.3)
+				cv.draw_line(at + d * 6.0, at + d * (22.0 + 16.0 * a), Color(1, 1, 1, 0.8 * a), 2.0)
+
+func _draw_closeup_photo_winter(cv: CanvasItem, ground_y: float, inner: Rect2, t: float) -> void:
+	# Snow lying still on the roof and the ground (a photograph: nothing falls), frost on the glass.
+	cv.draw_colored_polygon(PackedVector2Array([Vector2(136, 122), Vector2(384, 122), Vector2(372, 112), Vector2(148, 112)]), Color("#f4f6f8"))
+	cv.draw_rect(Rect2(inner.position.x, ground_y, inner.size.x, 10), Color("#f4f6f8"), true)
+	_draw_frost(cv, inner, 0.8)
+	# Someone up a ladder, fixing the lamp over the door: Graham. Touched, she screws the bulb in and waves.
+	cv.draw_line(Vector2(304, ground_y), Vector2(282, 236), Color("#5b4a3a"), 3.0)
+	cv.draw_line(Vector2(320, ground_y), Vector2(298, 236), Color("#5b4a3a"), 3.0)
+	for k in range(5):
+		var yk := 250.0 + k * 17.0
+		cv.draw_line(Vector2(285 + (yk - 236) * 0.23, yk), Vector2(301 + (yk - 236) * 0.23, yk), Color("#5b4a3a"), 2.0)
+	cv.draw_circle(Vector2(289, 238), 9.0, Color("#f2c6a0"))
+	cv.draw_arc(Vector2(289, 235), 9.5, PI * 1.05, PI * 1.95, 12, Color("#2b3547"), 6.0)
+	cv.draw_rect(Rect2(281, 246, 16, 22), Color("#4b79a8"), true)
+	var waving := s01_lamp_fixed or (closeup_anim == "lamp" and t > 0.5)
+	if waving:
+		var w := sin(Time.get_ticks_msec() * 0.01) * 6.0
+		cv.draw_line(Vector2(295, 248), Vector2(312 + w, 230), Color("#4b79a8"), 4.0)
+	else:
+		var twist := sin(t * TAU * 2.0) * 3.0 if closeup_anim == "lamp" else 0.0
+		cv.draw_line(Vector2(283, 248), Vector2(268 + twist, 238), Color("#4b79a8"), 4.0)
+	_s01_highlight(cv, "graham")
+	# The cleaner, shovelling snow. Touched, he throws a shovelful out of the photo.
+	_cv_figure(cv, Vector2(96, ground_y - 50), Color("#5d7a5a"), 3.6)
+	var throw := sin(clampf(t, 0.0, 1.0) * PI) if closeup_anim == "shovel" else 0.0
+	var blade := Vector2(118, 322).lerp(Vector2(126, 286), throw)
+	cv.draw_line(Vector2(100, 300), blade, Color("#8a6a3a"), 3.0)
+	cv.draw_rect(Rect2(blade - Vector2(6, 2), Vector2(12, 6)), Color("#7d8790"), true)
+	if closeup_anim == "shovel" and t > 0.4:
+		var k := (t - 0.4) / 0.6
+		var lump := blade.lerp(Vector2(-30, 420), k) + Vector2(0, -80.0 * sin(k * PI))
+		cv.draw_circle(lump, 9.0, Color("#f4f6f8"))
+		cv.draw_circle(lump + Vector2(8, 4), 6.0, Color("#f4f6f8"))
+	_s01_highlight(cv, "shoveler")
+	# ...and a white bear with blue eyes, on the ground; its eyes follow the hand.
+	var bear := Vector2(200, ground_y + 6)
+	cv.draw_circle(bear + Vector2(0, -16), 11.0, Color("#f4f6f8"))
+	cv.draw_circle(bear + Vector2(-9, -26), 4.0, Color("#f4f6f8"))
+	cv.draw_circle(bear + Vector2(9, -26), 4.0, Color("#f4f6f8"))
+	cv.draw_circle(bear + Vector2(0, 0), 13.0, Color("#f4f6f8"))
+	var look := (s01_photo_hand - (bear + Vector2(0, -18))).normalized() * 1.5
+	cv.draw_rect(Rect2(bear + Vector2(-6, -19) + look, Vector2(3.5, 3.5)), Color("#2f86e0"), true)
+	cv.draw_rect(Rect2(bear + Vector2(3, -19) + look, Vector2(3.5, 3.5)), Color("#2f86e0"), true)
+	_s01_highlight(cv, "bear")
+
+func _draw_closeup_photo_later(cv: CanvasItem, ground_y: float, inner: Rect2, door: Rect2, t: float) -> void:
+	# Years later: faded, nobody, the door boarded up, water stains and mould on the print.
+	cv.draw_line(door.position + Vector2(-4, 18), door.end + Vector2(4, -22), Color("#a88a62"), 6.0)
+	cv.draw_line(Vector2(door.position.x - 4, door.end.y - 22), Vector2(door.end.x + 4, door.position.y + 18), Color("#a88a62"), 6.0)
+	_draw_stains(cv, inner, 1.0)
+	# ...and a book with a blue cover and white pages on the doorstep. Touched, it leafs through itself.
+	var at := Vector2(259, ground_y + 7)
+	if s01_book_open or closeup_anim == "pages":
+		cv.draw_rect(Rect2(at - Vector2(20, 7), Vector2(40, 12)), Color("#2f86e0"), true)
+		cv.draw_rect(Rect2(at - Vector2(18, 9), Vector2(17, 12)), Color("#f4f6f8"), true)
+		cv.draw_rect(Rect2(at - Vector2(-1, 9), Vector2(17, 12)), Color("#f4f6f8"), true)
+		if closeup_anim == "pages":
+			var flip := fmod(t * 7.0, 1.0)
+			var tip := at + Vector2(lerpf(16, -16, flip), -9 - 14 * sin(flip * PI))
+			cv.draw_colored_polygon(PackedVector2Array([at + Vector2(0, -9), tip, tip + Vector2(0, 12), at + Vector2(0, 3)]), Color("#e6eaee"))
+		if s01_book_open or t > 0.85:
+			cv.draw_circle(at + Vector2(8, -3), 2.6, Color(0.2, 0.45, 0.85, 0.8))
+			for f in range(4):
+				cv.draw_circle(at + Vector2(5 + f * 2.0, -7), 0.9, Color(0.2, 0.45, 0.85, 0.8))
+	else:
+		cv.draw_rect(Rect2(at - Vector2(15, 6), Vector2(30, 11)), Color("#2f86e0"), true)
+		cv.draw_line(at + Vector2(-12, -1), at + Vector2(12, -1), Color("#f4f6f8"), 2.0)
+	cv.draw_rect(inner, Color(0.45, 0.45, 0.45, 0.22), true)
+	_s01_highlight(cv, "book")
+
+## Frost creeping in from the corners: fern-like crystals (instead of falling snow).
+func _draw_frost(cv: CanvasItem, area: Rect2, a: float) -> void:
+	var ice := Color(0.93, 0.97, 1.0, 0.75 * a)
+	var corners := [[area.position, 0.0], [Vector2(area.end.x, area.position.y), PI / 2.0], [area.end, PI], [Vector2(area.position.x, area.end.y), PI * 1.5]]
+	for c in corners:
+		var origin: Vector2 = c[0]
+		var base: float = c[1]
+		for i in range(5):
+			var ang := base + 0.15 + i * 0.3
+			var dir := Vector2.RIGHT.rotated(ang)
+			var length := 40.0 + (i % 3) * 22.0
+			cv.draw_line(origin, origin + dir * length, ice, 1.5)
+			for j in range(1, 5):
+				var p := origin + dir * (length * j / 5.0)
+				var side := 7.0 * (1.0 - j / 6.0)
+				cv.draw_line(p, p + dir.rotated(0.7) * side, ice, 1.0)
+				cv.draw_line(p, p + dir.rotated(-0.7) * side, ice, 1.0)
+
+## Water stains, mould and peeling paint (instead of cobwebs).
+func _draw_stains(cv: CanvasItem, area: Rect2, a: float) -> void:
+	var stain := Color(0.45, 0.33, 0.18, 0.45 * a)
+	for s in [[Vector2(70, 70), 30.0], [Vector2(430, 60), 22.0], [Vector2(400, 300), 40.0], [Vector2(110, 280), 18.0]]:
+		var c: Vector2 = area.position + (s[0] as Vector2) * (area.size / Vector2(484, 344))
+		var r: float = s[1]
+		cv.draw_arc(c, r, 0.0, TAU, 28, stain, 2.0)
+		cv.draw_arc(c + Vector2(3, 2), r * 0.7, 0.0, TAU, 24, Color(stain, 0.3 * a), 1.5)
+	for i in range(18):
+		var p := area.position + Vector2(fmod(i * 53.0, area.size.x * 0.3) + area.size.x * 0.68, fmod(i * 29.0, area.size.y * 0.25))
+		cv.draw_circle(p, 1.5 + (i % 3), Color(0.25, 0.33, 0.2, 0.55 * a))
+	cv.draw_colored_polygon(PackedVector2Array([area.position + Vector2(0, area.size.y * 0.6), area.position + Vector2(26, area.size.y * 0.66), area.position + Vector2(8, area.size.y * 0.74), area.position + Vector2(0, area.size.y * 0.72)]), Color(0.92, 0.9, 0.84, 0.7 * a))
+
+## The blue-eyed girl in the opening-day crowd (LAN, years ago). She holds a piece of chalk;
+## when Graham reaches for it, her arm comes out of the photograph.
+func _draw_closeup_girl(cv: CanvasItem, head: Vector2) -> void:
+	var skin := Color("#e2c9a8")
+	var shoulder := head + Vector2(6, 14)
+	cv.draw_colored_polygon(PackedVector2Array([head + Vector2(-8, 9), head + Vector2(8, 9), head + Vector2(14, 34), head + Vector2(-14, 34)]), Color("#f4f6f8"))
+	cv.draw_circle(head, 9.0, skin)
+	cv.draw_rect(Rect2(head + Vector2(-5, -2), Vector2(3, 3)), Color("#2f86e0"), true)
+	cv.draw_rect(Rect2(head + Vector2(2, -2), Vector2(3, 3)), Color("#2f86e0"), true)
+	cv.draw_arc(head + Vector2(0, -2), 9.5, PI, TAU, 10, Color("#c9b27e"), 3.0)
+	var hand: Vector2
+	if s01_has_chalk:
+		hand = shoulder + Vector2(4, 18)
+	elif closeup == "photo" and closeup_anim == "chalk":
+		# Out of the photo and down past its frame, toward Graham's hand.
+		var t := closeup_anim_t
+		var raised := shoulder + Vector2(16, -14)
+		var out := Vector2(310, 420)
+		hand = raised.lerp(out, t * t * (3.0 - 2.0 * t)) + Vector2(0, -40.0 * sin(t * PI))
+	else:
+		hand = shoulder + Vector2(16, -14)
+	cv.draw_line(shoulder, hand, skin, 3.0)
+	cv.draw_circle(hand, 2.5, skin)
+	if not s01_has_chalk:
+		var fade := 1.0
+		if closeup_anim == "chalk" and closeup_anim_t > 0.85:
+			fade = (1.0 - closeup_anim_t) / 0.15
+		cv.draw_rect(Rect2(hand + Vector2(-2, -7), Vector2(4, 11)), Color(1, 1, 1, fade), true)
+
+## Graham's hand over the photo (big close-up): her sleeve comes in from the bottom edge.
+func _draw_closeup_hand(cv: CanvasItem) -> void:
+	if closeup_anim == "chalk":
+		return
+	var h := s01_photo_hand
+	var sleeve := Color("#4b79a8")
+	var skin := Color("#f2c6a0")
+	cv.draw_colored_polygon(PackedVector2Array([h + Vector2(-9, 14), h + Vector2(9, 14), h + Vector2(16, 460 - h.y), h + Vector2(-16, 460 - h.y)]), Color(sleeve, 0.9))
+	cv.draw_circle(h + Vector2(0, 6), 9.0, skin)
+	cv.draw_line(h + Vector2(-2, 2), h + Vector2(-1, -10), skin, 4.0)
+	for f in [Vector2(-7, 0), Vector2(5, -2), Vector2(9, 4)]:
+		cv.draw_line(h + Vector2(f.x * 0.6, 4), h + f, skin, 3.5)
+	cv.draw_circle(h + Vector2(-1, -10), 2.0, skin.darkened(0.15))
+
+func _draw_closeup_map(cv: CanvasItem, sz: Vector2) -> void:
+	var font := ThemeDB.fallback_font
+	cv.draw_rect(Rect2(Vector2.ZERO, sz), Color("#8a6f4a"), true)
+	cv.draw_rect(Rect2(Vector2(12, 12), sz - Vector2(24, 24)), Color("#d8cfb5"), true)
+	cv.draw_string(font, Vector2(30, 46), "真理社区导览图", HORIZONTAL_ALIGNMENT_LEFT, -1, 20, Color("#6b5a44"))
+	_s01_draw_map_on(cv, S01_MAZE_BIG_AREA, true)
+	if closeup_anim == "key":
+		var t := closeup_anim_t
+		var cell := Vector2(S01_MAZE_BIG_AREA.size.x / 12.0, S01_MAZE_BIG_AREA.size.y / 6.0)
+		var goal := _s01_maze_pos(S01_MAZE_GOAL, S01_MAZE_BIG_AREA)
+		if t < 0.35:
+			# The chalk line and the bow light up together: a key.
+			var glow := sin(t / 0.35 * PI)
+			_s01_draw_key_shape(cv, goal, cell, Color(1, 1, 1, 0.35 * glow), cell.y * 0.7)
+			_s01_draw_key_shape(cv, goal, cell, Color(1, 1, 1, 0.9), cell.y * 0.2)
+		else:
+			# It peels off the paper, turns, and drops out of the bottom of the close-up.
+			var k := (t - 0.35) / 0.65
+			var origin := goal.lerp(Vector2(sz.x * 0.45, sz.y + 120), k * k)
+			var shrink := lerpf(1.0, 0.55, k)
+			_s01_draw_key_shape(cv, origin + Vector2(3, 4), cell * shrink, Color(0, 0, 0, 0.35), cell.y * 0.3 * shrink, k * 0.6)
+			_s01_draw_key_shape(cv, origin, cell * shrink, Color("#fbfbf7"), cell.y * 0.3 * shrink, k * 0.6)
+
+func _draw_closeup_clocks(cv: CanvasItem, sz: Vector2) -> void:
+	var font := ThemeDB.fallback_font
+	var time := Time.get_ticks_msec() * 0.001
+	# While a hand is turning, the painting slides from the old era to the new one.
+	var w := 1.0
+	var from_era := s01_era
+	var from_melt := s01_melt
+	if closeup_anim == "turn":
+		w = closeup_anim_t * closeup_anim_t * (3.0 - 2.0 * closeup_anim_t)
+		from_era = closeup_prev_era
+		from_melt = closeup_prev_melt
+	var weights: Array[float] = []
+	for k in range(3):
+		weights.append(lerpf(1.0 if from_era == k else 0.0, 1.0 if s01_era == k else 0.0, w))
+	var sky: Color = S01_CLOCK_SKY[from_era].lerp(S01_CLOCK_SKY[s01_era], w)
+	var ground: Color = S01_CLOCK_GROUND[from_era].lerp(S01_CLOCK_GROUND[s01_era], w)
+	cv.draw_rect(Rect2(Vector2.ZERO, sz), Color("#c7a56f"), true)
+	var inner := Rect2(Vector2(16, 16), sz - Vector2(32, 32))
+	cv.draw_rect(inner, sky, true)
+	cv.draw_rect(Rect2(inner.position.x, inner.end.y - 80, inner.size.x, 80), ground, true)
+	cv.draw_line(Vector2(150, inner.end.y - 80), Vector2(250, 60), Color("#4f5d60"), 12.0)
+	cv.draw_line(Vector2(222, 108), Vector2(262, 96), Color("#4f5d60"), 6.0)
+	# Opening day: warm light, and press cameras flashing.
+	if weights[0] > 0.01:
+		var a0 := weights[0]
+		cv.draw_rect(inner, Color(1.0, 0.85, 0.5, 0.18 * a0), true)
+		for k in range(3):
+			var phase := fmod(time * 0.5 + k * 0.37, 1.0)
+			if phase < 0.09:
+				var at: Vector2 = [Vector2(80, 70), Vector2(470, 90), Vector2(300, 250)][k]
+				var a := (1.0 - phase / 0.09) * a0
+				cv.draw_circle(at, 12.0 + 18.0 * a, Color(1, 1, 1, 0.45 * a))
+				for r in range(6):
+					var d := Vector2.RIGHT.rotated(r * TAU / 6.0 + 0.3)
+					cv.draw_line(at + d * 8.0, at + d * (26.0 + 20.0 * a), Color(1, 1, 1, 0.8 * a), 2.0)
+	# Winter: frost growing in from the corners, the eyes glazed and cracked.
+	if weights[1] > 0.01:
+		_draw_frost(cv, inner, weights[1])
+	# Years later: water stains, mould, peeling paint, a crack across the canvas.
+	if weights[2] > 0.01:
+		var a2 := weights[2]
+		cv.draw_rect(inner, Color(0.4, 0.4, 0.38, 0.35 * a2), true)
+		_draw_stains(cv, inner, a2)
+		cv.draw_polyline(PackedVector2Array([Vector2(300, 16), Vector2(286, 70), Vector2(312, 118), Vector2(296, 190), Vector2(318, 260), Vector2(304, sz.y - 16)]), Color(0.1, 0.1, 0.1, 0.7 * a2), 2.0)
+	var left_a := lerpf(_s01_hand_angle(_s01_left_turns(from_era)), _s01_hand_angle(_s01_left_turns(s01_era)), w)
+	var right_a := lerpf(_s01_hand_angle(from_era + from_melt), _s01_hand_angle(s01_era + s01_melt), w)
+	var right_melt := lerpf(float(from_melt), float(s01_melt), w)
+	_draw_closeup_clock_eye(cv, Vector2(160, 170), left_a, 0.0, weights[1])
+	_draw_closeup_clock_eye(cv, Vector2(400, 170), right_a, right_melt, weights[1])
+	# The restorer's fresh stroke, on this frame too (she touched up the photo).
+	if s01_restorer_dab:
+		cv.draw_polyline(PackedVector2Array([Vector2(20, 330), Vector2(60, 318), Vector2(96, 326)]), Color(0.12, 0.42, 0.72, 0.9), 5.0)
+	cv.draw_string(font, Vector2(sz.x * 0.5 - 64, -10), "《观看的永恒》", HORIZONTAL_ALIGNMENT_LEFT, -1, 20, Color("#e8dfc8"))
+
+func _s01_hand_angle(turns: int) -> float:
+	return -PI / 2.0 + turns * 0.9
+
+func _draw_closeup_clock_eye(cv: CanvasItem, c: Vector2, a: float, melt: float, frost: float) -> void:
+	var white := Color("#ece6d6")
+	if melt >= 2.95:
+		cv.draw_circle(c, 52.0, Color("#3d4441"))
+		cv.draw_line(c + Vector2(0, 52), c + Vector2(6, 160), Color("#cfc8b6"), 6.0)
+		return
+	var drip := 80.0 + melt * 40.0
+	cv.draw_colored_polygon(PackedVector2Array([c + Vector2(-46, 14), c + Vector2(46, 14), c + Vector2(14, drip), c + Vector2(0, drip + 16.0), c + Vector2(-14, drip)]), white)
+	cv.draw_circle(c, 52.0, white)
+	cv.draw_arc(c, 52.0, 0.0, TAU, 40, Color("#8f8a7c"), 2.0)
+	for k in range(12):
+		var t := -PI / 2.0 + k * TAU / 12.0
+		cv.draw_line(c + Vector2(cos(t), sin(t)) * 44.0, c + Vector2(cos(t), sin(t)) * 49.0, Color("#8f8a7c"), 2.0)
+	if frost > 0.01:
+		# A skin of ice over the eye, cracked in a few straight lines.
+		cv.draw_circle(c, 50.0, Color(0.85, 0.93, 1.0, 0.25 * frost))
+		for k in range(4):
+			var d := Vector2.RIGHT.rotated(0.4 + k * 1.7)
+			cv.draw_polyline(PackedVector2Array([c + d * 8.0, c + d * 26.0 + d.orthogonal() * 4.0, c + d * 48.0]), Color(1, 1, 1, 0.8 * frost), 1.5)
+	cv.draw_line(c, c + Vector2(cos(a), sin(a)) * 38.0, Color("#2b2b2b"), 5.0)
+	cv.draw_line(c, c + Vector2(cos(a * 3.0), sin(a * 3.0)) * 24.0, Color("#2b2b2b"), 6.0)
+	cv.draw_circle(c, 6.0, Color("#2b2b2b"))
+
+func _draw_closeup_door(cv: CanvasItem, sz: Vector2) -> void:
+	cv.draw_rect(Rect2(Vector2.ZERO, sz), Color("#5a4636"), true)
+	var frame := Rect2(70, 96, 200, sz.y - 96)
+	var panel := Rect2(84, 110, 172, sz.y - 110)
+	cv.draw_rect(frame, Color("#445866"), true)
+	# Opening (the past way, with the key): the dark doorway and light beyond it.
+	var t := -1.0
+	if closeup_anim == "door":
+		t = closeup_anim_t
+	elif s01_gate_open and s01_exit_route == "past":
+		t = 1.0
+	var swing := clampf((t - 0.55) / 0.45, 0.0, 1.0) if t >= 0.0 else 0.0
+	cv.draw_rect(panel, Color("#0e1620"), true)
+	if swing > 0.0:
+		cv.draw_colored_polygon(PackedVector2Array([panel.position + Vector2(40, 40), Vector2(panel.end.x - 30, panel.position.y + 40), Vector2(panel.end.x, panel.end.y), Vector2(panel.position.x, panel.end.y)]), Color(0.86, 0.93, 1.0, 0.18 * swing))
+	# The door swings toward the viewer: its free edge comes past the frame on the left.
+	var free_x := lerpf(panel.end.x, panel.position.x - 120.0, swing)
+	var bulge := 50.0 * swing
+	var door_pts := PackedVector2Array([panel.position, Vector2(free_x, panel.position.y - bulge), Vector2(free_x, panel.end.y + bulge), Vector2(panel.position.x, panel.end.y)])
+	if free_x > panel.position.x + 1.0:
+		cv.draw_colored_polygon(door_pts, Color("#1c2934"))
+	elif free_x < panel.position.x - 1.0:
+		cv.draw_colored_polygon(PackedVector2Array([door_pts[0], door_pts[3], door_pts[2], door_pts[1]]), Color("#253645"))
+	# Rust (the future way).
+	if s01_melt >= 2:
+		for i in range(10 + s01_melt * 8):
+			var p := panel.position + Vector2(fmod(i * 47.0, panel.size.x), fmod(i * 61.0, panel.size.y))
+			cv.draw_circle(p, 6.0 + (i % 4) * 2.0, Color(0.55, 0.3, 0.16, 0.85))
+	if swing <= 0.0:
+		# The lock plate, with a key engraved above the keyhole.
+		var plate := Rect2(206, 214, 40, 92)
+		cv.draw_rect(plate, Color("#b59f73"), true)
+		cv.draw_rect(plate, Color("#7a6a4a"), false, 2.0)
+		_s01_draw_key_shape(cv, plate.position + Vector2(6, 22), Vector2(2.4, 3.0), Color("#5d4f36"), 1.4)
+		cv.draw_circle(Vector2(226, 266), 5.0, Color("#1a1a1a"))
+		cv.draw_colored_polygon(PackedVector2Array([Vector2(223, 268), Vector2(229, 268), Vector2(231, 286), Vector2(221, 286)]), Color("#1a1a1a"))
+		if t >= 0.0:
+			# The chalk key slides in from where Graham holds it, then turns.
+			var slide := clampf(t / 0.3, 0.0, 1.0)
+			var turn := clampf((t - 0.3) / 0.25, 0.0, 1.0)
+			var tip := Vector2(226, 272) + Vector2(160, 90) * (1.0 - slide)
+			_s01_draw_key_shape(cv, tip, Vector2(5.0, 6.0) * lerpf(1.0, 0.8, turn), Color("#fbfbf7"), 3.0, turn * TAU * 0.5)
+	_draw_closeup_sign(cv, Vector2(sz.x * 0.5, 60))
+
+func _draw_closeup_sign(cv: CanvasItem, s: Vector2) -> void:
+	var font := ThemeDB.fallback_font
+	if s01_melt >= 2:
+		cv.draw_line(s + Vector2(-40, -40), s + Vector2(-40, -26), Color("#6d6250"), 3.0)
+		return
+	if s01_era == 2:
+		cv.draw_line(s + Vector2(-44, -40), s + Vector2(-44, -24), Color("#6d6250"), 3.0)
+		var pivot := s + Vector2(-48, -24)
+		var pts := PackedVector2Array()
+		for corner in [Vector2(0, 0), Vector2(96, 0), Vector2(96, 44), Vector2(0, 44)]:
+			pts.append(pivot + corner.rotated(0.38))
+		cv.draw_colored_polygon(pts, Color("#2f3f35"))
+		cv.draw_polyline(PackedVector2Array([pts[0], pts[1], pts[2], pts[3], pts[0]]), Color("#56604f"), 2.0)
+		return
+	var glow := 0.25 if s01_era == 0 else 0.14
+	var flicker := 1.0 if s01_era == 0 else 0.85 + 0.15 * sin(Time.get_ticks_msec() * 0.02)
+	cv.draw_circle(s, 62.0 if s01_era == 0 else 52.0, Color(0.35, 1.0, 0.55, glow * 0.5 * flicker))
+	cv.draw_circle(s, 44.0, Color(0.35, 1.0, 0.55, glow * flicker))
+	for cx in [-36.0, 36.0]:
+		cv.draw_line(s + Vector2(cx, -34), s + Vector2(cx, -22), Color("#8d7b5c"), 3.0)
+	cv.draw_rect(Rect2(s - Vector2(48, 22), Vector2(96, 44)), Color("#3fdc7a") if s01_era == 0 else Color("#2fae5f"), true)
+	cv.draw_string(font, s + Vector2(-30, 12), "出口", HORIZONTAL_ALIGNMENT_LEFT, -1, 30, Color.WHITE)
+
+## 《这不是一只眼睛》 up close. No hints here any more; but its cornea is curved like a fisheye lens,
+## and Graham is in it (easter egg): a big head, small feet, the room bent around her.
+func _draw_closeup_eye(cv: CanvasItem, sz: Vector2) -> void:
+	var font := ThemeDB.fallback_font
+	cv.draw_rect(Rect2(Vector2.ZERO, sz), Color("#c7a56f"), true)
+	var inner := Rect2(Vector2(16, 16), sz - Vector2(32, 32))
+	cv.draw_rect(inner, Color("#777f78"), true)
+	var c := Vector2(sz.x * 0.5, 160)
+	var white := _s01_ring(c, 150, 84, 40)
+	white.remove_at(white.size() - 1)
+	cv.draw_colored_polygon(white, Color("#ece6d6"))
+	cv.draw_circle(c, 56.0, Color("#55718a"))
+	for k in range(16):
+		var a := k * TAU / 16.0
+		cv.draw_line(c + Vector2(cos(a), sin(a)) * 26.0, c + Vector2(cos(a), sin(a)) * 52.0, Color(0.27, 0.4, 0.5, 0.6), 2.0)
+	cv.draw_circle(c, 24.0, Color("#151a1f"))
+	# The reflection: the hall's ceiling lights and floor bent into curves, and Graham, where she stands.
+	var side := clampf((player.position.x - S01_EYE_CENTER.x) / 500.0, -1.0, 1.0) if player else 0.0
+	var refl := Color(0.85, 0.92, 1.0, 0.28)
+	cv.draw_arc(c + Vector2(0, 70), 76.0, PI * 1.25, PI * 1.75, 16, refl, 2.0)
+	cv.draw_arc(c + Vector2(0, -60), 70.0, PI * 0.3, PI * 0.7, 16, refl, 2.0)
+	for lx in [-1.0, 0.0, 1.0]:
+		cv.draw_circle(c + Vector2(lx * 24.0, -36.0 + absf(lx) * 6.0), 2.5, Color(1, 0.95, 0.8, 0.5))
+	var g := c + Vector2(side * 26.0, 6.0)
+	var a_g := 0.62
+	cv.draw_colored_polygon(PackedVector2Array([g + Vector2(-7, 8), g + Vector2(7, 8), g + Vector2(3, 22), g + Vector2(-3, 22)]), Color(0.29, 0.47, 0.66, a_g))
+	cv.draw_circle(g, 11.0, Color(0.95, 0.78, 0.63, a_g))
+	cv.draw_arc(g + Vector2(0, -3), 11.5, PI * 1.05, PI * 1.95, 12, Color(0.17, 0.21, 0.28, a_g + 0.2), 5.0)
+	cv.draw_circle(g + Vector2(-4, -1), 1.6, Color(0.1, 0.12, 0.18, a_g))
+	cv.draw_circle(g + Vector2(4, -1), 1.6, Color(0.1, 0.12, 0.18, a_g))
+	cv.draw_circle(c + Vector2(-22, -22), 8.0, Color(1, 1, 1, 0.55))
+	cv.draw_circle(c + Vector2(-12, -30), 3.0, Color(1, 1, 1, 0.5))
+	cv.draw_string(font, Vector2(sz.x * 0.5 - 70, sz.y - 40), "这不是一只眼睛", HORIZONTAL_ALIGNMENT_LEFT, -1, 22, Color("#e8e2d0"))
+	cv.draw_string(font, Vector2(sz.x * 0.5 - 90, -10), "《这不是一只眼睛》", HORIZONTAL_ALIGNMENT_LEFT, -1, 20, Color("#e8dfc8"))
+
+## --- 超写实插帧 (hyper-real inserts) -----------------------------------------------------------
+## At a few peak beats the flat style hard-cuts, for under a second, to a still with far too much
+## real detail (pores, wet eyeballs, dirt under nails, scratched brass), then cuts back. Used
+## sparingly. These are placeholders: procedural noise standing in for photographed or painted
+## stills that the real art will replace. Each one is labelled on screen as a placeholder.
+const HYPER_RECT := Rect2(236, 80, 680, 400)
+
+## Which insert is showing now, and how far into it (0..1); empty when none.
+func _s01_hyper_now() -> Array:
+	if closeup == "":
+		return []
+	var t := closeup_anim_t
+	match closeup_anim:
+		"chalk":
+			if t >= 0.35 and t <= 0.72:
+				return ["hand", (t - 0.35) / 0.37]
+		"door":
+			if t >= 0.26 and t <= 0.6:
+				return ["brass", (t - 0.26) / 0.34]
+		"eyelid":
+			if t >= 0.12 and t <= 0.86:
+				return ["eyelid", (t - 0.12) / 0.74]
+		"splat":
+			return ["eyeball", t]
+	return []
+
+func _hyper_texture(kind: String) -> Texture2D:
+	if hyper_textures.has(kind):
+		return hyper_textures[kind]
+	var w := 160
+	var h := 110
+	var img := Image.create_empty(w, h, false, Image.FORMAT_RGB8)
+	var noise := FastNoiseLite.new()
+	noise.seed = kind.hash()
+	noise.frequency = 0.06
+	noise.fractal_octaves = 5
+	var fine := FastNoiseLite.new()
+	fine.seed = kind.hash() + 7
+	fine.frequency = 0.45
+	for y in range(h):
+		for x in range(w):
+			var n := noise.get_noise_2d(x, y) * 0.5 + 0.5
+			var f := fine.get_noise_2d(x, y) * 0.5 + 0.5
+			var c := Color.WHITE
+			if kind == "skin":
+				c = Color(0.82, 0.60, 0.52).lerp(Color(0.62, 0.38, 0.34), n)
+				c = c.lerp(Color(0.74, 0.40, 0.44), clampf(noise.get_noise_2d(x * 0.3 + 50.0, y * 0.3), 0.0, 1.0) * 0.5)
+				if f > 0.76:
+					c = c.darkened(0.28)
+			elif kind == "eyeball":
+				c = Color(0.97, 0.95, 0.91).lerp(Color(0.93, 0.78, 0.74), n * n)
+				if f > 0.85:
+					c = c.lerp(Color(0.85, 0.55, 0.55), 0.4)
+			else:
+				var b := noise.get_noise_2d(x * 0.12, y * 2.5) * 0.5 + 0.5
+				c = Color(0.42, 0.30, 0.10).lerp(Color(0.98, 0.84, 0.46), b)
+				if f > 0.8:
+					c = c.darkened(0.35)
+			img.set_pixel(x, y, c)
+	var tex := ImageTexture.create_from_image(img)
+	hyper_textures[kind] = tex
+	return tex
+
+func _hyper_poly(cv: CanvasItem, pts: PackedVector2Array, tex: Texture2D, area: Rect2) -> void:
+	var uvs := PackedVector2Array()
+	for p in pts:
+		uvs.append((p - area.position) / area.size)
+	cv.draw_polygon(pts, PackedColorArray([Color.WHITE]), uvs, tex)
+
+func _hyper_capsule(base: Vector2, tip: Vector2, width: float) -> PackedVector2Array:
+	var d := (tip - base).normalized()
+	var n := d.orthogonal() * width * 0.5
+	var pts := PackedVector2Array([base + n, tip + n])
+	for i in range(1, 8):
+		pts.append(tip + n.rotated(-PI * i / 8.0))
+	pts.append(tip - n)
+	pts.append(base - n)
+	return pts
+
+func _hyper_veins(cv: CanvasItem, area: Rect2, center: Vector2, count: int, seed_value: int, alpha: float) -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed_value
+	for i in range(count):
+		var a := rng.randf() * TAU
+		var p := center + Vector2.RIGHT.rotated(a) * area.size.x * 0.45
+		var line := PackedVector2Array([p])
+		for k in range(6):
+			p += (center - p).normalized().rotated(rng.randf_range(-0.9, 0.9)) * rng.randf_range(14.0, 30.0)
+			line.append(p)
+		cv.draw_polyline(line, Color(0.72, 0.12, 0.14, alpha), rng.randf_range(1.0, 2.6))
+
+func _draw_hyperreal(cv: CanvasItem) -> void:
+	# After the eyelid has shut, the whole screen is black until the gallery's darkness takes over.
+	if closeup_anim == "eyelid" and closeup_anim_t > 0.86:
+		cv.draw_rect(Rect2(0, 0, 1152, 648), Color(0, 0, 0, 0.97), true)
+		return
+	var now := _s01_hyper_now()
+	if now.is_empty():
+		return
+	var kind: String = now[0]
+	var p: float = now[1]
+	var r := HYPER_RECT
+	cv.draw_rect(Rect2(0, 58, 1152, 590), Color(0, 0, 0, 0.92), true)
+	var label := ""
+	match kind:
+		"eyelid":
+			label = "真实的眼睑合上"
+			cv.draw_texture_rect(_hyper_texture("eyeball"), r, false)
+			var c := r.get_center()
+			_hyper_veins(cv, r, c, 14, 11, 0.75)
+			cv.draw_circle(c, 92.0, Color(0.26, 0.36, 0.44))
+			for k in range(48):
+				var d := Vector2.RIGHT.rotated(k * TAU / 48.0)
+				cv.draw_line(c + d * 40.0, c + d * 90.0, Color(0.55, 0.66, 0.72, 0.35), 1.5)
+			cv.draw_circle(c, 38.0, Color(0.03, 0.03, 0.04))
+			cv.draw_circle(c + Vector2(-30, -34), 16.0, Color(1, 1, 1, 0.85))
+			cv.draw_circle(c + Vector2(-8, -44), 6.0, Color(1, 1, 1, 0.7))
+			# The lid comes down: skin with pores, a crease, a wet pink rim and lashes.
+			var e := p * p * (3.0 - 2.0 * p)
+			var lid_h := r.size.y * minf(1.0, e * 1.05)
+			if lid_h > 1.0:
+				cv.draw_texture_rect_region(_hyper_texture("skin"), Rect2(r.position, Vector2(r.size.x, lid_h)), Rect2(0, 110.0 * (1.0 - lid_h / r.size.y), 160, 110.0 * lid_h / r.size.y))
+				var edge := r.position.y + lid_h
+				if lid_h > 30.0:
+					cv.draw_polyline(PackedVector2Array([Vector2(r.position.x, edge - 26), Vector2(c.x, edge - 34), Vector2(r.end.x, edge - 26)]), Color(0.45, 0.25, 0.22, 0.6), 3.0)
+				cv.draw_line(Vector2(r.position.x, edge), Vector2(r.end.x, edge), Color(0.85, 0.5, 0.5), 5.0)
+				var rng := RandomNumberGenerator.new()
+				rng.seed = 5
+				for i in range(70):
+					var x := r.position.x + i * r.size.x / 70.0 + rng.randf_range(-3, 3)
+					var lash := rng.randf_range(14, 26)
+					cv.draw_polyline(PackedVector2Array([Vector2(x, edge), Vector2(x + 3, edge + lash * 0.6), Vector2(x + 8, edge + lash)]), Color(0.08, 0.06, 0.05), rng.randf_range(1.2, 2.2))
+		"eyeball":
+			label = "湿眼球摊在地毯上"
+			cv.draw_rect(r, Color("#4d1f1c"), true)
+			var rng := RandomNumberGenerator.new()
+			rng.seed = 3
+			for i in range(260):
+				cv.draw_line(r.position + Vector2(rng.randf() * r.size.x, rng.randf() * r.size.y), r.position + Vector2(rng.randf() * r.size.x, rng.randf() * r.size.y).lerp(r.get_center(), 0.97), Color(0.55, 0.22, 0.2, 0.25), 1.0)
+			var c := r.get_center() + Vector2(0, 30)
+			var squash := lerpf(0.9, 0.55, minf(1.0, p * 3.0))
+			var blob := PackedVector2Array()
+			for i in range(36):
+				var a := TAU * i / 36.0
+				var wob := 1.0 + 0.08 * sin(a * 5.0) + 0.05 * sin(a * 11.0)
+				blob.append(c + Vector2(cos(a) * 190.0 * wob, sin(a) * 190.0 * squash * wob))
+			cv.draw_colored_polygon(blob, Color(0.85, 0.75, 0.7, 0.35))
+			var core := PackedVector2Array()
+			for i in range(36):
+				var a := TAU * i / 36.0
+				core.append(c + Vector2(cos(a) * 150.0, sin(a) * 150.0 * squash))
+			_hyper_poly(cv, core, _hyper_texture("eyeball"), r)
+			_hyper_veins(cv, Rect2(c - Vector2(150, 150), Vector2(300, 300)), c, 12, 21, 0.8)
+			var iris_c := c + Vector2(40, -10 * squash)
+			var iris := PackedVector2Array()
+			for i in range(28):
+				var a := TAU * i / 28.0
+				iris.append(iris_c + Vector2(cos(a) * 58.0, sin(a) * 58.0 * squash))
+			cv.draw_colored_polygon(iris, Color(0.3, 0.38, 0.42))
+			cv.draw_circle(iris_c, 20.0 * squash + 4.0, Color(0.03, 0.03, 0.04))
+			cv.draw_circle(c + Vector2(-60, -50 * squash), 14.0, Color(1, 1, 1, 0.9))
+			cv.draw_circle(c + Vector2(-30, -62 * squash), 5.0, Color(1, 1, 1, 0.8))
+		"hand":
+			label = "小孩的手，指甲缝里有粉笔灰"
+			cv.draw_rect(r, Color(0.33, 0.27, 0.2), true)
+			var skin := _hyper_texture("skin")
+			var wrist := Vector2(r.position.x + 300, r.end.y + 10)
+			var palm := PackedVector2Array()
+			var pc := Vector2(r.position.x + 330, r.position.y + 250)
+			for i in range(24):
+				var a := TAU * i / 24.0
+				palm.append(pc + Vector2(cos(a) * 110.0, sin(a) * 90.0))
+			_hyper_poly(cv, _hyper_capsule(wrist, pc, 150.0), skin, r)
+			_hyper_poly(cv, palm, skin, r)
+			var tips := [Vector2(-90, -170), Vector2(-25, -200), Vector2(40, -190), Vector2(100, -150)]
+			for i in range(4):
+				var base := pc + Vector2(-75 + i * 50, -50)
+				var tip: Vector2 = pc + (tips[i] as Vector2)
+				_hyper_poly(cv, _hyper_capsule(base, tip, 44.0), skin, r)
+				cv.draw_line(base.lerp(tip, 0.55) + Vector2(-14, 0), base.lerp(tip, 0.55) + Vector2(14, 2), Color(0.45, 0.27, 0.24, 0.6), 2.0)
+				var nail := tip + (base - tip).normalized() * 22.0
+				cv.draw_circle(nail, 13.0, Color(0.9, 0.78, 0.74, 0.8))
+				cv.draw_arc(nail, 13.0, PI * 1.1, PI * 1.9, 10, Color(0.85, 0.85, 0.82), 3.0)
+				cv.draw_arc(nail, 15.0, PI * 1.15, PI * 1.85, 10, Color(0.18, 0.13, 0.1), 2.0)
+			# The thumb pins the chalk against the fingers.
+			_hyper_poly(cv, _hyper_capsule(pc + Vector2(90, 40), pc + Vector2(190, -40), 50.0), skin, r)
+			var chalk := PackedVector2Array([pc + Vector2(60, -120), pc + Vector2(210, -60), pc + Vector2(200, -36), pc + Vector2(50, -96)])
+			cv.draw_colored_polygon(chalk, Color(0.96, 0.95, 0.92))
+			var rng := RandomNumberGenerator.new()
+			rng.seed = 9
+			for i in range(60):
+				var q := (pc + Vector2(60, -110)).lerp(pc + Vector2(200, -50), rng.randf()) + Vector2(rng.randf_range(-6, 6), rng.randf_range(-6, 6))
+				cv.draw_circle(q, rng.randf_range(0.8, 2.0), Color(0.75, 0.74, 0.7))
+		_:
+			label = "黄铜锁芯与粉笔灰"
+			cv.draw_texture_rect(_hyper_texture("brass"), r, false)
+			var c := r.get_center()
+			for k in range(5):
+				cv.draw_arc(c, 70.0 + k * 26.0, 0.0, TAU, 48, Color(0.3, 0.2, 0.05, 0.35), 2.0)
+			cv.draw_circle(c, 60.0, Color(0.55, 0.42, 0.16))
+			cv.draw_circle(c + Vector2(0, -12), 22.0, Color(0.02, 0.02, 0.02))
+			cv.draw_colored_polygon(PackedVector2Array([c + Vector2(-12, 0), c + Vector2(12, 0), c + Vector2(18, 48), c + Vector2(-18, 48)]), Color(0.02, 0.02, 0.02))
+			# The chalk blade goes in, crumbling.
+			var depth := minf(1.0, p * 1.6)
+			var blade := PackedVector2Array([c + Vector2(-9, 220 - 200 * depth), c + Vector2(9, 220 - 200 * depth), c + Vector2(9, 400), c + Vector2(-9, 400)])
+			cv.draw_colored_polygon(blade, Color(0.95, 0.94, 0.9))
+			var rng := RandomNumberGenerator.new()
+			rng.seed = 13
+			for i in range(70):
+				var q := c + Vector2(rng.randf_range(-40, 40), rng.randf_range(20, 60) + p * rng.randf_range(40, 200))
+				cv.draw_circle(q, rng.randf_range(0.8, 2.4), Color(0.93, 0.92, 0.88, 0.85))
+	# Marked as a placeholder until the real still is made.
+	var font := ThemeDB.fallback_font
+	cv.draw_rect(Rect2(r.position + Vector2(10, r.size.y - 34), Vector2(330, 24)), Color(0, 0, 0, 0.65), true)
+	cv.draw_string(font, r.position + Vector2(18, r.size.y - 16), "超写实插帧（占位）· " + label, HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(1, 1, 1, 0.9))
 
 func _s02_mx(x: float) -> float:
 	return 2.0 * S02_AXIS_X - x
@@ -1536,14 +2478,29 @@ func _build_blue_lake_transform() -> void:
 	blue_lake_transform.finished.connect(_finish_blue_lake_transformation)
 	add_child(blue_lake_transform)
 
+## Close-ups are drawn on their own layer so they cover Graham; the map's maze is built here too.
+func _build_closeup_layer() -> void:
+	closeup_layer = Node2D.new()
+	closeup_layer.name = "Closeup"
+	closeup_layer.z_index = 50
+	add_child(closeup_layer)
+	closeup_layer.draw.connect(_draw_closeup)
+	for path in S01_MAZE_PATHS:
+		for i in range(path.size() - 1):
+			var a: Vector2i = path[i]
+			var b: Vector2i = path[i + 1]
+			_s01_maze_link(a, b)
+	s01_maze_path.clear()
+	s01_maze_path.append(S01_MAZE_START)
+
 func _start_blue_lake_intro() -> void:
 	blue_lake_intro_started = true
 	player.input_locked = true
-	_show_dialogue("Blue Lake：\n……等等。")
+	_show_dialogue("LAN：\n……等等。")
 	await get_tree().create_timer(0.75).timeout
-	_show_dialogue("Blue Lake：\n这里有东西。")
+	_show_dialogue("LAN：\n这里有东西。")
 	await get_tree().create_timer(0.85).timeout
-	_show_dialogue("Blue Lake：\n你看不见。")
+	_show_dialogue("LAN：\n你看不见。")
 	await get_tree().create_timer(0.85).timeout
 	blue_lake_intro_ready = true
 	player.input_locked = false
@@ -1566,6 +2523,9 @@ func _hide_space_prompt() -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if not LEGACY_PROTOTYPE_FLOW_ENABLED:
+		if S01_ENABLED and s01_active and closeup != "":
+			_s01_closeup_input(event)
+			return
 		if event.is_action_pressed("blue_lake"):
 			if S03_ENABLED and s03_active:
 				_try_toggle_s03_blue_lake()
@@ -1621,7 +2581,7 @@ func _start_blue_lake_transformation() -> void:
 	blue_lake_intro_ready = false
 	player.input_locked = true
 	_hide_space_prompt()
-	_show_dialogue("Blue Lake：\n看。")
+	_show_dialogue("LAN：\n看。")
 	blue_lake_transform.play()
 
 func _finish_blue_lake_transformation() -> void:
@@ -1632,17 +2592,17 @@ func _finish_blue_lake_transformation() -> void:
 	chalk_cursor.set_active(true)
 	player.input_locked = false
 	if s03_active:
-		_show_dialogue("蓝湖：这就是我看到的。把粉笔移到维纳斯的眼睛上，点左键。")
+		_show_dialogue("LAN：这就是我看到的。把粉笔移到维纳斯的眼睛上，点左键。")
 	elif s04_active:
-		_show_dialogue("Blue Lake：把粉笔移到《窗》上，点一下，拉窗帘。")
+		_show_dialogue("LAN：把粉笔移到《窗》上，点一下，拉窗帘。")
 	elif s05_active:
-		_show_dialogue("Blue Lake：现在，把粉笔移到《窗》上（哪里都行），点左键。")
+		_show_dialogue("LAN：现在，把粉笔移到《窗》上（哪里都行），点左键。")
 	elif s06_active:
-		_show_dialogue("Blue Lake：" + _s06_chalk_hint())
+		_show_dialogue("LAN：" + _s06_chalk_hint())
 	elif s07_active:
-		_show_dialogue("Blue Lake：" + ("用粉笔点红房子的一扇窗。" if s07_room == "hall" else "用粉笔点那扇“窗”，回展厅去。"))
+		_show_dialogue("LAN：" + ("用粉笔点红房子的一扇窗。" if s07_room == "hall" else "用粉笔点那扇“窗”，回展厅去。"))
 	else:
-		_show_dialogue("Blue Lake 已经变成粉笔。")
+		_show_dialogue("LAN 已经变成粉笔。")
 	_update_ui()
 	queue_redraw()
 
@@ -1693,52 +2653,364 @@ func _try_interact() -> void:
 func _try_s01_interact() -> void:
 	if not s01_active or scene_state != "gallery" or transition_started or s01_eyelid_closed:
 		return
+	if closeup != "":
+		_s01_closeup_press_e()
+		return
 	var nearest := _get_nearest_s01_interactable()
 	if nearest.is_empty():
 		return
 	s01_idle_time = 0.0
 	var object_name: String = nearest.get("name", "")
-	if object_name == "EntrancePhoto":
-		chapter_state.mark_event(&"s01_photo_observed")
-		_show_dialogue(_s01_photo_text())
-	elif object_name == "CommunityMap":
-		chapter_state.mark_event(&"s01_map_observed")
-		_show_dialogue("真理社区导览图。整个社区的轮廓……像一颗大脑。\n“你在这里”的红点，在后脑勺的位置。")
-	elif object_name == "ClockBack" or object_name == "ClockForward":
-		_s01_turn_clock(object_name == "ClockForward")
-	elif object_name == "ExitDoor":
-		_s01_use_door()
-	elif object_name == "NotAnEye":
-		_s01_look_at_eye()
+	match object_name:
+		"EntrancePhoto":
+			chapter_state.mark_event(&"s01_photo_observed")
+			_open_closeup("photo", S01_PHOTO_RECT)
+			s01_photo_hand = S01_HAND_START
+			_show_dialogue(_s01_photo_text())
+		"CommunityMap":
+			chapter_state.mark_event(&"s01_map_observed")
+			_open_closeup("map", S01_MAP_RECT)
+			_show_dialogue(_s01_map_text())
+		"ClockBack", "ClockForward":
+			_open_closeup("clock_back" if object_name == "ClockBack" else "clock_forward", S01_CLOCKS_RECT)
+			_s01_turn_clock(object_name == "ClockForward")
+		"ExitDoor":
+			if s01_gate_open:
+				_enter_s02_after_s01()
+				return
+			_open_closeup("door", Rect2(680, 250, 80, 122))
+			_show_dialogue(_s01_door_text())
+		"NotAnEye":
+			_s01_look_at_eye()
+
+## --- Close-ups (特写) -------------------------------------------------------------------------
+## E opens a close-up: the thing grows from where it hangs to the middle of the screen. If there is
+## something to do in it, E does that; otherwise (and afterwards) E puts it away. Graham stands still
+## while she looks. A "big" close-up (the map) also takes WASD.
+func _open_closeup(id: String, from: Rect2) -> void:
+	closeup = id
+	closeup_t = 0.0
+	closeup_closing = false
+	closeup_from = from
+	closeup_anim = ""
+	closeup_anim_t = 0.0
+	if player:
+		player.input_locked = true
+
+func _close_closeup() -> void:
+	if closeup == "" or closeup_anim != "":
+		return
+	closeup_closing = true
+
+func _closeup_kind() -> String:
+	return "clocks" if closeup.begins_with("clock") else closeup
+
+func _update_closeup(delta: float) -> void:
+	if closeup_layer:
+		closeup_layer.queue_redraw()
+	if closeup == "":
+		return
+	if closeup_closing:
+		closeup_t = maxf(0.0, closeup_t - delta / CLOSEUP_OPEN_TIME)
+		if closeup_t <= 0.0:
+			closeup = ""
+			closeup_closing = false
+			if player and not s01_eyelid_closed:
+				player.input_locked = false
+		return
+	closeup_t = minf(1.0, closeup_t + delta / CLOSEUP_OPEN_TIME)
+	# The photo is a big close-up: WASD moves Graham's hand over it.
+	if closeup == "photo" and closeup_anim == "":
+		var v := Input.get_vector("move_left", "move_right", "move_up", "move_down")
+		s01_photo_hand = (s01_photo_hand + v * S01_HAND_SPEED * delta).clamp(Vector2(24, 24), Vector2(496, 356))
+	if closeup_anim != "":
+		var duration: float = CLOSEUP_ANIM_TIME.get(closeup_anim, 1.0)
+		closeup_anim_t = minf(1.0, closeup_anim_t + delta / duration)
+		if closeup_anim_t >= 1.0:
+			var done := closeup_anim
+			closeup_anim = ""
+			_s01_closeup_anim_done(done)
+
+## True when the close-up took the event.
+func _s01_closeup_input(event: InputEvent) -> bool:
+	if event.is_action_pressed("interact"):
+		_s01_closeup_press_e()
+		return true
+	if _s01_maze_active():
+		for step in [["move_left", Vector2i(-1, 0)], ["move_right", Vector2i(1, 0)], ["move_up", Vector2i(0, -1)], ["move_down", Vector2i(0, 1)]]:
+			var action: String = step[0]
+			if event.is_action_pressed(action, true):
+				var dir: Vector2i = step[1]
+				_s01_maze_step(dir)
+				return true
+	return false
+
+func _s01_closeup_press_e() -> void:
+	if closeup == "" or closeup_closing or closeup_anim != "":
+		return
+	s01_idle_time = 0.0
+	if closeup == "photo":
+		var spot := _s01_photo_spot_at(s01_photo_hand)
+		if spot != "":
+			_s01_photo_touch(spot)
+			return
+	if closeup == "door" and s01_has_key and not s01_gate_open:
+		_s01_play("door")
+		_show_dialogue("格雷汉把粉笔钥匙插进锁孔。")
+		return
+	_close_closeup()
+
+func _s01_play(anim: String) -> void:
+	closeup_anim = anim
+	closeup_anim_t = 0.0
+
+func _s01_closeup_anim_done(done: String) -> void:
+	match done:
+		"chalk":
+			s01_has_chalk = true
+			chapter_state.mark_story_event(&"s01_got_chalk")
+			_show_dialogue("照片里的小女孩把手伸出了相框，把一截粉笔放进格雷汉手里。\n格雷汉：……谢谢？")
+		"snip":
+			s01_ribbon_cut = true
+			chapter_state.mark_story_event(&"s01_ribbon_cut")
+			_show_dialogue("彩带断了。照片里的人好像都在鼓掌，可是一点声音也没有。")
+		"dab":
+			s01_restorer_dab = true
+			chapter_state.mark_story_event(&"s01_restorer_dab")
+			_show_dialogue("修复师转过身来，在照片的玻璃上补了一笔，又转回去看那扇门。\n……颜料还是湿的。")
+		"heads":
+			s01_visitors_turned = true
+			chapter_state.mark_story_event(&"s01_visitors_turned")
+			_show_dialogue("所有参观者同时转过头来，看着你。\n他们的脸上什么也没有。")
+		"giant":
+			s01_cleaner_waved = true
+			chapter_state.mark_story_event(&"s01_cleaner_giant")
+			_show_dialogue("……又缩了回去，接着扫地，像什么都没发生过。")
+		"lamp":
+			s01_lamp_fixed = true
+			chapter_state.mark_story_event(&"s01_lamp_fixed")
+			_show_dialogue("梯子上的格雷汉把灯泡拧紧了。照片里，门口的灯亮了。\n她低下头，朝你挥了挥手。")
+		"shovel":
+			s01_snow_out = true
+			chapter_state.mark_story_event(&"s01_snow_out")
+			_show_dialogue("清洁工一铲子把雪甩向画框——\n雪从照片里飞了出去，落在你脚边。")
+		"pages":
+			s01_book_open = true
+			chapter_state.mark_story_event(&"s01_book_open")
+			_show_dialogue("蓝皮书自己翻起页来，哗啦啦……\n最后一页上，印着一个很小的手印。")
+		"key":
+			s01_has_key = true
+			chapter_state.mark_event(&"s01_key_drawn")
+			_show_dialogue("钥匙落进了格雷汉手里。白色的，还掉着粉笔灰。")
+			closeup_closing = true
+		"door":
+			_complete_s01("past")
+			closeup_closing = true
+		"turn":
+			if closeup_prev_melt < 2 and s01_melt >= 2:
+				# The eye has dropped onto the carpet: a hyper-real insert.
+				_s01_play("splat")
+		"eyelid":
+			closeup = ""
+			closeup_t = 0.0
+			_s01_close_eyelid()
+
+func _s01_closeup_hint() -> String:
+	if closeup_closing or closeup_anim != "":
+		return ""
+	if closeup == "photo":
+		return "E 碰一碰　　WASD 移动手" if _s01_photo_spot_at(s01_photo_hand) != "" else "WASD 移动手　　E 收起"
+	if closeup == "door" and s01_has_key and not s01_gate_open:
+		return "E 插钥匙"
+	if _s01_maze_active():
+		return "WASD 沿着脑沟走　　E 收起"
+	return "E 收起"
+
+## --- The people in 《美术馆开幕日》 ----------------------------------------------------------
+## The photo is a big close-up: Graham's hand moves over it (WASD) and E touches whoever is under it.
+## Each touch leaves a visible change somewhere else: in the other eras of the photo, on another
+## exhibit in the hall, or on the hall's floor.
+func _s01_photo_spots() -> Array:
+	match s01_era:
+		0:
+			return [
+				{"id": "girl", "pos": Vector2(205, 312), "r": 22.0},
+				{"id": "guard", "pos": Vector2(320, 300), "r": 26.0},
+				{"id": "restorer", "pos": Vector2(70, 300), "r": 24.0},
+				{"id": "visitors", "pos": Vector2(112, 300), "r": 20.0},
+				{"id": "visitors", "pos": Vector2(424, 300), "r": 40.0},
+				{"id": "cleaner", "pos": Vector2(482, 304), "r": 22.0}
+			]
+		1:
+			return [
+				{"id": "graham", "pos": Vector2(289, 248), "r": 26.0},
+				{"id": "shoveler", "pos": Vector2(96, 300), "r": 26.0},
+				{"id": "bear", "pos": Vector2(200, 318), "r": 22.0}
+			]
+	return [{"id": "book", "pos": Vector2(259, 337), "r": 22.0}]
+
+func _s01_photo_spot_at(p: Vector2) -> String:
+	var best := ""
+	var best_d := 99999.0
+	for spot in _s01_photo_spots():
+		var pos: Vector2 = spot.pos
+		var r: float = spot.r
+		var d := p.distance_to(pos)
+		if d < r and d < best_d:
+			best_d = d
+			best = spot.id
+	return best
+
+func _s01_photo_touch(id: String) -> void:
+	chapter_state.mark_event(StringName("s01_photo_touched_" + id))
+	match id:
+		"girl":
+			if s01_has_chalk:
+				_show_dialogue("小女孩冲你眨了眨蓝眼睛。")
+			else:
+				_s01_play("chalk")
+				_show_dialogue("（你朝照片里的小女孩伸出手。）")
+		"guard":
+			if s01_ribbon_cut:
+				_show_dialogue("保安把大剪刀扛在肩上，一动不动。")
+			else:
+				_s01_play("snip")
+				_show_dialogue("保安举起大剪刀——咔嚓。")
+		"restorer":
+			if s01_restorer_dab:
+				_show_dialogue("修复师又在看那扇门了。")
+			else:
+				_s01_play("dab")
+				_show_dialogue("你碰了碰修复师的肩膀。")
+		"visitors":
+			if s01_visitors_turned:
+				_show_dialogue("他们还在看你。")
+			else:
+				_s01_play("heads")
+				_show_dialogue("参观者们一直盯着那扇门……")
+		"cleaner":
+			_s01_play("giant")
+			_show_dialogue("清洁工扫着扫着，忽然变得很大很大，从屋顶后面探出头来——")
+		"graham":
+			if s01_lamp_fixed:
+				_show_dialogue("照片里的格雷汉还在朝你挥手。")
+			else:
+				_s01_play("lamp")
+				_show_dialogue("你轻轻扶了一下梯子。")
+		"shoveler":
+			if s01_snow_out:
+				_show_dialogue("清洁工还在铲雪。好像永远铲不完。")
+			else:
+				_s01_play("shovel")
+				_show_dialogue("你碰了碰铲雪的人。")
+		"bear":
+			chapter_state.mark_story_event(&"s01_bear_tilted")
+			_show_dialogue("白熊歪了歪头。它的蓝眼睛一直跟着你的手。")
+		"book":
+			if s01_book_open:
+				_show_dialogue("最后一页上，那个很小的手印还在。")
+			else:
+				_s01_play("pages")
+				_show_dialogue("你碰了碰台阶上的蓝皮书。")
+
+## --- The map maze: the "你在这里" dot walks the sulci, the chalk follows ----------------------
+func _s01_maze_active() -> bool:
+	return closeup == "map" and not closeup_closing and closeup_anim == "" and s01_has_chalk and not s01_has_key
+
+func _s01_maze_link(a: Vector2i, b: Vector2i) -> void:
+	if not s01_maze_adj.has(a):
+		s01_maze_adj[a] = []
+	if not s01_maze_adj.has(b):
+		s01_maze_adj[b] = []
+	s01_maze_adj[a].append(b)
+	s01_maze_adj[b].append(a)
+
+## The grooves form a tree, so the chalk line (start → dot) is always the one path there; stepping
+## back the way it came wipes the last stroke. The way to the front of the head draws the key's
+## blade and teeth; the round gyrus printed around "你在这里" is its bow.
+func _s01_maze_step(dir: Vector2i) -> void:
+	var cur: Vector2i = s01_maze_path[s01_maze_path.size() - 1]
+	var next: Vector2i = cur + dir
+	var links: Array = s01_maze_adj.get(cur, [])
+	if not links.has(next):
+		return
+	if s01_maze_path.size() >= 2 and s01_maze_path[s01_maze_path.size() - 2] == next:
+		s01_maze_path.pop_back()
+	elif not s01_maze_path.has(next):
+		s01_maze_path.append(next)
+	else:
+		return
+	s01_idle_time = 0.0
+	if next == S01_MAZE_GOAL:
+		chapter_state.mark_event(&"s01_maze_solved")
+		closeup_anim = "key"
+		closeup_anim_t = 0.0
+		_show_dialogue("粉笔线走到了额头，和红点外面那一圈脑回连在了一起——\n是一把钥匙。它从纸上浮了起来。")
 
 func _s01_photo_text() -> String:
 	if s01_era == 0:
-		return "照片回到了真正的开幕日。大家站在一座红房子门前剪彩，人很多。\n一位保安正把一串钥匙挂到门边的钩子上。人群里还有一位拿着画笔的修复师，和一位一直盯着画看的参观者。"
+		var t := "照片回到了真正的开幕日。大家站在红房子门前剪彩，人很多。\n保安举着大剪刀，修复师拿着画笔，参观者一直盯着门看。"
+		if s01_has_chalk:
+			return t + "\n前排的小女孩空着手，冲你笑。"
+		return t + "\n前排有个小女孩，在地上画了一团弯弯曲曲的东西。"
 	if s01_era == 1:
 		var first := "" if chapter_state.has_story_event(&"s01_saw_self_in_photo") else "\n门口梯子上修灯的那个人……是我？那年冬天，我在这里修过灯。"
 		chapter_state.mark_story_event(&"s01_saw_self_in_photo")
-		return "《美术馆开幕日》。照片里是美术馆的正门，一座红房子。那扇门、门边的钩子，和这里一模一样。我们就是从照片里进来的。\n……可照片里在下雪。" + first
-	return "多年以后。照片里的红房子褪了色，门口空了，到处是灰。\n门边的钩子上什么也没有。"
+		return "《美术馆开幕日》。照片里是美术馆的正门，一座红房子。\n……可照片里在下雪。" + first
+	return "多年以后。照片里的红房子褪了色，门被木板钉上了，到处是灰。"
 
+func _s01_map_text() -> String:
+	if s01_has_key:
+		return "导览图上空出了一块钥匙形状的白。\n“你在这里”的红点停在了额头上。"
+	if s01_has_chalk:
+		var how := "\n（WASD：沿着脑沟走。走回头路，粉笔线会跟着擦掉。）"
+		if s01_maze_path.size() > 1:
+			return "粉笔线还停在刚才的地方。" + how
+		return "格雷汉把粉笔按在“你在这里”的红点上。红点动了一下。" + how
+	return "真理社区导览图。整个社区的轮廓像一颗大脑，脑沟弯弯曲曲，像一座迷宫。\n“你在这里”的红点在后脑勺，圈在一道圆圆的脑回里。额头那边印着“出口”。"
+
+func _s01_door_text() -> String:
+	chapter_state.mark_event(&"s01_exit_area_observed")
+	var sign_text := "门上的“出口”灯稳稳地亮着，不再嗡嗡响了。" if s01_lamp_fixed else "门上的“出口”灯嗡嗡地亮着，一闪一闪。"
+	if s01_melt >= 2:
+		sign_text = "门上的“出口”灯掉在了地上。"
+	elif s01_era == 2:
+		sign_text = "门上的“出口”灯不亮了，歪歪地挂着。"
+	elif s01_era == 0:
+		sign_text = "门上的“出口”灯是新的，亮得刺眼。"
+	if s01_has_key:
+		return "出口。锁孔上方刻着一把钥匙，和手里这把一模一样。"
+	if s01_melt >= 1:
+		return "门还锁着。门上的锈越来越多了。\n" + sign_text
+	if chapter_state.has_story_event(&"s01_door_tried"):
+		return "门锁着。锁孔上方刻着一把钥匙：一个圈，一根弯弯曲曲的杆。\n" + sign_text
+	chapter_state.mark_story_event(&"s01_door_tried")
+	return "出口。门锁着。\n" + sign_text
+
+## Each E on a clock-eye opens 《观看的永恒》 and turns one hand by one notch; the painting changes
+## with the photo's era (warm and festive / snow / dust and a crack), but the photo itself is across
+## the room: to see what changed there, Graham has to put the painting away and go and look.
 func _s01_turn_clock(forward: bool) -> void:
 	if not s01_clocks_seen:
 		s01_clocks_seen = true
 		chapter_state.mark_event(&"s01_clocks_observed")
 		_show_dialogue("《观看的永恒》：融化的不是时钟，而是眼球。两只眼球的瞳孔，都是钟表的指针。\n说明牌写着：时间在此失去意义。（指针好像拨得动。）")
 		return
+	closeup_prev_era = s01_era
+	closeup_prev_melt = s01_melt
 	if not forward:
 		if s01_era == 0:
 			_show_dialogue("左边那只眼睛的指针拨不动了。\n再往前，这里还不存在。")
 			return
 		s01_era -= 1
-		var text := "左边那只眼睛里，指针往回走了一格。\n旧照片里的光变了。"
+		var text := "左边那只眼睛里，指针往回走了一格。\n画里暖和起来了，像在过节。" if s01_era == 0 else "左边那只眼睛里，指针往回走了一格。\n画里又下起了雪。"
 		if s01_melt > 0:
 			text += "\n可右边那只眼睛……倒不回去了。"
 		_show_dialogue(text)
 	else:
 		if s01_era < 2:
 			s01_era += 1
-			_show_dialogue("右边那只眼睛里，指针往前走了一格。\n旧照片里的光变了。")
+			_show_dialogue("右边那只眼睛里，指针往前走了一格。\n画里开始下雪。" if s01_era == 1 else "右边那只眼睛里，指针往前走了一格。\n画上落满了灰，画布裂开了一道缝。")
 		else:
 			s01_melt += 1
 			chapter_state.mark_event(StringName("s01_melt_%d" % s01_melt))
@@ -1749,37 +3021,24 @@ func _s01_turn_clock(forward: bool) -> void:
 			else:
 				_show_dialogue("眼球化成了地上的一滩。\n门……锈穿了。")
 				_complete_s01("future")
-	s01_key_on_hook = s01_era == 0 and not s01_gate_open
-	if s01_key_on_hook:
-		chapter_state.mark_event(&"s01_key_appeared")
+	closeup_anim = "turn"
+	closeup_anim_t = 0.0
 	queue_redraw()
-
-func _s01_use_door() -> void:
-	chapter_state.mark_event(&"s01_exit_area_observed")
-	if s01_gate_open:
-		_enter_s02_after_s01()
-		return
-	if s01_key_on_hook:
-		_complete_s01("past")
-		return
-	if s01_melt >= 1:
-		_show_dialogue("门还锁着。门上的锈越来越多了。")
-	elif chapter_state.has_story_event(&"s01_door_tried"):
-		_show_dialogue("门锁着。门边的钩子是空的。\nBlue Lake：照片里的门和这扇一模一样……照片里的钥匙呢？")
-	else:
-		chapter_state.mark_story_event(&"s01_door_tried")
-		_show_dialogue("出口。门锁着。\n门边有一个空钩子。格雷汉：钥匙本该挂在这里。")
 
 func _s01_look_at_eye() -> void:
 	s01_eye_visits += 1
 	chapter_state.mark_event(&"s01_second_exhibit_observed")
+	_open_closeup("eye", S01_EYE_RECT)
 	if s01_eye_visits == 1:
 		_show_dialogue("《这不是一只眼睛》：画面是一只眼睛，说明牌却说“这不是一只眼睛”。\n……它在看我。")
 	elif s01_eye_visits == 2:
-		_show_dialogue("它的目光" + ("跟着你走。" if s01_idle_time < S01_HINT_AFTER else "落在别处。") + "\n画框的边上，好像能摸到一片薄薄的眼皮。")
+		_show_dialogue("它一眨不眨。\n画框的边上，好像能摸到一片薄薄的眼皮。")
 	else:
+		# Easter egg: the third look pulls the eyelid down over the close-up and the whole gallery.
 		s01_eye_visits = 1
-		_s01_close_eyelid()
+		closeup_anim = "eyelid"
+		closeup_anim_t = 0.0
+		_show_dialogue("（你伸手，把它的眼皮拉了下来。）")
 
 ## Easter egg: pull the eyelid shut and the whole gallery goes dark; only the clock-eyes tick.
 func _s01_close_eyelid() -> void:
@@ -1794,10 +3053,9 @@ func _s01_close_eyelid() -> void:
 		var layer := dialogue_label.get_parent()
 		layer.add_child(s01_dark_overlay)
 		layer.move_child(s01_dark_overlay, dialogue_label.get_index())
-	s01_dark_overlay.modulate.a = 0.0
-	var tween := create_tween()
-	tween.tween_property(s01_dark_overlay, "modulate:a", 0.97, 0.6)
-	_show_dialogue("（你伸手，把它的眼皮拉了下来。）\n……滴答。")
+	# The lid has already closed over the close-up: start dark.
+	s01_dark_overlay.modulate.a = 0.97
+	_show_dialogue("……滴答。")
 	await get_tree().create_timer(1.6).timeout
 	_show_dialogue("……滴答。……滴答。\n整座美术馆都闭上了眼睛。")
 	await get_tree().create_timer(1.8).timeout
@@ -1817,15 +3075,17 @@ func _update_s01(delta: float) -> void:
 		target = _s01_hint_target()
 	s01_eye_look = s01_eye_look.lerp(target, minf(1.0, delta * 3.0))
 	# Step back to the far left and the wall reads as a face.
-	if not s01_face_noticed and player.position.x <= 250.0 and s01_clocks_seen and s01_eye_visits > 0 and chapter_state.has_event(&"s01_exit_area_observed"):
+	if closeup == "" and not s01_face_noticed and player.position.x <= 250.0 and s01_clocks_seen and s01_eye_visits > 0 and chapter_state.has_event(&"s01_exit_area_observed"):
 		s01_face_noticed = true
 		chapter_state.mark_story_event(&"s01_face_noticed")
-		_show_dialogue("Blue Lake：退远一点看——那两幅画是一双眼睛，钩子是鼻子，门是嘴。\n这面墙在看我们。")
+		_show_dialogue("LAN：退远一点看——那两幅画是一双眼睛，“出口”灯是鼻子，门是嘴。\n这面墙在看我们。")
 
 ## Where 《这不是一只眼睛》 looks when Graham is stuck.
 func _s01_hint_target() -> Vector2:
-	if s01_key_on_hook:
-		return S01_HOOK
+	if s01_has_key:
+		return S01_DOOR_RECT.get_center()
+	if s01_has_chalk:
+		return S01_MAP_RECT.get_center()
 	if not chapter_state.has_event(&"s01_photo_observed"):
 		return S01_PHOTO_RECT.get_center()
 	if not s01_clocks_seen:
@@ -1834,13 +3094,12 @@ func _s01_hint_target() -> Vector2:
 		return S01_DOOR_RECT.get_center()
 	return S01_CLOCK_BACK if s01_era > 0 else S01_PHOTO_RECT.get_center()
 
-## The door opens one of two ways: the opening-day key (past) or rusted through (future).
+## The door opens one of two ways: the chalk key drawn on the map (past) or rusted through (future).
 func _complete_s01(route: String) -> void:
 	if s01_completion_started:
 		return
 	s01_completion_started = true
 	s01_exit_route = route
-	s01_key_on_hook = false
 	chapter_state.mark_event(&"s01_no_obvious_exit_recognized")
 	chapter_state.mark_event(StringName("s01_exit_by_" + route))
 	chapter_state.learn(&"s01_need_to_leave")
@@ -1851,7 +3110,7 @@ func _complete_s01(route: String) -> void:
 		gate_body.collision_layer = 0
 		gate_body.collision_mask = 0
 	if route == "past":
-		_show_dialogue("格雷汉从钩子上取下钥匙，插进锁孔。门开了。\n这里没有一个正常的出口。我要继续往里面走。")
+		_show_dialogue("钥匙转了两圈。门朝格雷汉打开了。\n这里没有一个正常的出口。我要继续往里面走。")
 	else:
 		_show_dialogue("眼球化成了地上的一滩。门锁锈穿了，一推就开。\n格雷汉：时间在这里真的没有意义。……我要继续往里面走。")
 	objective_label.text = "我要出去。"
@@ -1875,7 +3134,7 @@ func _enter_s02_after_s01() -> void:
 	# Through the S01 door Graham arrives at this hall's entrance, on the left.
 	player.position.x = 120.0
 	objective_label.text = "继续探索美术馆"
-	_show_dialogue("蓝湖：好暗……往里走走看。")
+	_show_dialogue("LAN：好暗……往里走走看。")
 	_update_ui()
 	queue_redraw()
 
@@ -1935,7 +3194,7 @@ func _complete_s02_counterpart() -> void:
 	chapter_state.mark_event(&"s02_counterpart_noticed")
 	_show_dialogue("保安：出口在对面。\n格雷汉望向对面：那边也站着一个人影，和你一个姿势。……可是镜子里没有我。")
 	await get_tree().create_timer(2.6).timeout
-	_show_dialogue("蓝湖：那不是镜子。\n这里的空间有问题。")
+	_show_dialogue("LAN：那不是镜子。\n这里的空间有问题。")
 	await get_tree().create_timer(2.6).timeout
 	chapter_state.mark_event(&"s02_space_loop_recognized")
 	chapter_state.learn(&"s02_space_has_a_problem")
@@ -2025,9 +3284,9 @@ func _try_s03_interact() -> void:
 		_s03_install_arms()
 	elif object_name == "SculptureVenus" and s03_eye_lit and not s03_mirror_held:
 		if s03_hands_seen:
-			_show_dialogue("《机械维纳斯》：没有手臂。光在她眼睛的位置交汇。\n蓝湖：按 Space，可以再借她的眼睛看一次。")
+			_show_dialogue("《机械维纳斯》：没有手臂。光在她眼睛的位置交汇。\nLAN：按 Space，可以再借她的眼睛看一次。")
 		else:
-			_show_dialogue("《机械维纳斯》：光在她眼睛的位置交汇。\n蓝湖：按 Space，借她的眼睛看看。")
+			_show_dialogue("《机械维纳斯》：光在她眼睛的位置交汇。\nLAN：按 Space，借她的眼睛看看。")
 		_show_space_prompt()
 	elif object_name == "SecurityGuard":
 		if s03_left_installed:
@@ -2086,7 +3345,7 @@ func _s03_light_the_eye() -> void:
 	s03_busy = true
 	chapter_state.mark_event(&"s03_venus_eye_lit")
 	objective_label.text = "借维纳斯的眼睛（Space）"
-	_show_dialogue("水面亮了。反射的光射进棱镜，两束光交叉，落在维纳斯的眼睛上。\n蓝湖：……她看得见了。按 Space，让我借她的眼睛看看。")
+	_show_dialogue("水面亮了。反射的光射进棱镜，两束光交叉，落在维纳斯的眼睛上。\nLAN：……她看得见了。按 Space，让我借她的眼睛看看。")
 	_show_space_prompt()
 	await get_tree().create_timer(0.6).timeout
 	s03_busy = false
@@ -2106,18 +3365,18 @@ func _s03_cross_by_reflection() -> void:
 	player.input_locked = false
 	s03_busy = false
 	objective_label.text = "从对面那扇门出去"
-	_show_dialogue("蓝湖：出口在对面。他一直没说错。")
+	_show_dialogue("LAN：出口在对面。他一直没说错。")
 
 func _try_toggle_s03_blue_lake() -> void:
 	if s03_busy:
 		return
 	if not s03_eye_lit:
-		_show_dialogue("蓝湖：太暗了，我也看不清。先找到光。")
+		_show_dialogue("LAN：太暗了，我也看不清。先找到光。")
 		return
 	if not blue_lake_active and not blue_lake_transform_completed:
 		player.input_locked = true
 		_hide_space_prompt()
-		_show_dialogue("蓝湖：看。")
+		_show_dialogue("LAN：看。")
 		blue_lake_transform.play()
 		return
 	blue_lake_active = not blue_lake_active
@@ -2125,7 +3384,7 @@ func _try_toggle_s03_blue_lake() -> void:
 	visual_mode = "Chalk Interaction" if blue_lake_active else "Standard"
 	if not blue_lake_active and s03_pov_active:
 		_s03_end_pov()
-	_show_dialogue("蓝湖：" + ("把粉笔移到维纳斯的眼睛上，点左键。" if blue_lake_active else "……先收起来。"))
+	_show_dialogue("LAN：" + ("把粉笔移到维纳斯的眼睛上，点左键。" if blue_lake_active else "……先收起来。"))
 	_update_ui()
 	queue_redraw()
 
@@ -2147,7 +3406,7 @@ func _s03_advance_pov() -> void:
 	s03_pov_line += 1
 	s03_pov_timer = 0.0
 	if s03_pov_line >= S03_POV_LINES.size():
-		_show_dialogue("蓝湖：……那个保安举着的，是她的手。另一只，在对面那盆树里。\n按 Space 收起蓝湖。")
+		_show_dialogue("LAN：……那个保安举着的，是她的手。另一只，在对面那盆树里。\n按 Space 收起蓝湖。")
 		return
 	if s03_pov_line == 1:
 		s03_hands_seen = true
@@ -2216,7 +3475,7 @@ func _s03_mirror_appears(fitted: String) -> void:
 	chapter_state.learn(&"s03_visual_is_not_reality")
 	_show_dialogue("维纳斯托起了一面镜子。\n那面看不见的镜子，一直在等她的手。")
 	await get_tree().create_timer(2.8).timeout
-	_show_dialogue("蓝湖：镜子里有你。\n……对面那扇门，你的倒影够得着吗？")
+	_show_dialogue("LAN：镜子里有你。\n……对面那扇门，你的倒影够得着吗？")
 	objective_label.text = "让镜子里的你站到对面那扇门前"
 	player.input_locked = false
 	s03_busy = false
@@ -2261,13 +3520,13 @@ func _s03_ride_interact() -> void:
 	var n: String = item.name
 	if n == "FarDoorTag":
 		chapter_state.mark_event(&"s03_graham_tag_read")
-		_show_dialogue("蓝湖：门把手上挂着一张资产标签。\n“No.0779 修理工 格雷汉·斯蒂尔”。")
+		_show_dialogue("LAN：门把手上挂着一张资产标签。\n“No.0779 修理工 格雷汉·斯蒂尔”。")
 	elif n == "SkeletonPainting":
-		_show_dialogue("蓝湖：骷髅也在看水。\n它的水里映着的，是那个少年。")
+		_show_dialogue("LAN：骷髅也在看水。\n它的水里映着的，是那个少年。")
 	elif n == "BonsaiPot":
 		s03_pot_on_belt = true
 		chapter_state.mark_event(&"s03_bonsai_pushed")
-		_show_dialogue("蓝湖用力一推，那盆树滑上了传送带。\n锈铁叶子沙沙作响，和它一起往中间去。")
+		_show_dialogue("LAN 用力一推，那盆树滑上了传送带。\n锈铁叶子沙沙作响，和它一起往中间去。")
 
 func _s03_start_ride() -> void:
 	s03_ride_active = true
@@ -2275,7 +3534,7 @@ func _s03_start_ride() -> void:
 	s02_figure_alpha = 1.0
 	player.input_locked = true
 	chapter_state.mark_event(&"s03_blue_lake_ride")
-	_show_dialogue("蓝湖：……我在对面。\n传送带推着我往中间走。经过什么的时候，按 E。")
+	_show_dialogue("LAN：……我在对面。\n传送带推着我往中间走。经过什么的时候，按 E。")
 
 func _s03_end_ride() -> void:
 	s03_ride_active = false
@@ -2284,9 +3543,9 @@ func _s03_end_ride() -> void:
 	player.input_locked = false
 	if s03_pot_on_belt:
 		s03_ride_done = true
-		_show_dialogue("蓝湖：我只能走到这里。门那边，我出不去。\n剩下的，交给你。")
+		_show_dialogue("LAN：我只能走到这里。门那边，我出不去。\n剩下的，交给你。")
 	else:
-		_show_dialogue("蓝湖：……那盆树过去了。\n再让我站到门口试一次。")
+		_show_dialogue("LAN：……那盆树过去了。\n再让我站到门口试一次。")
 
 func _update_s03(delta: float) -> void:
 	if not s03_active:
@@ -2318,19 +3577,19 @@ func _update_s03(delta: float) -> void:
 
 func _try_toggle_s04_blue_lake() -> void:
 	if not s04_window_seen:
-		_show_dialogue("Blue Lake：先看看那幅会发光的画。")
+		_show_dialogue("LAN：先看看那幅会发光的画。")
 		return
 	if not blue_lake_active and not blue_lake_transform_completed:
 		player.input_locked = true
 		_hide_space_prompt()
-		_show_dialogue("Blue Lake：让我来拉窗帘。")
+		_show_dialogue("LAN：让我来拉窗帘。")
 		blue_lake_transform.play()
 		return
 	blue_lake_active = not blue_lake_active
 	chalk_cursor.set_active(blue_lake_active)
 	visual_mode = "Chalk Interaction" if blue_lake_active else "Standard"
 	_hide_space_prompt()
-	_show_dialogue("Blue Lake：" + ("把粉笔移到《窗》上，点一下，拉窗帘。" if blue_lake_active else "……先收起来。"))
+	_show_dialogue("LAN：" + ("把粉笔移到《窗》上，点一下，拉窗帘。" if blue_lake_active else "……先收起来。"))
 	_update_ui()
 	queue_redraw()
 
@@ -2472,7 +3731,7 @@ func _s04_talk_to_visitors() -> void:
 		else:
 			_show_dialogue("参观者：那幅《星空》在动。\n我总是用眼角才看得到。")
 	elif s04_riboflavin_applied and s04_uv_on:
-		_show_dialogue("参观者：刚才那个发光的……停下来就不见了。\nBlue Lake：他们只看得见动的东西。从他们面前走过去。")
+		_show_dialogue("参观者：刚才那个发光的……停下来就不见了。\nLAN：他们只看得见动的东西。从他们面前走过去。")
 	else:
 		_show_dialogue("参观者：刚才有人走过去……\n现在什么也没有了。")
 
@@ -2528,7 +3787,7 @@ func _s04_look_at_window() -> void:
 	if not s04_window_seen:
 		s04_window_seen = true
 		chapter_state.mark_event(&"s04_window_observed")
-		_show_dialogue("《窗》：整间屋子的光，都是从这幅画里照出来的。\n画上的窗帘……好像拉得动。Blue Lake：按 Space，让我来。")
+		_show_dialogue("《窗》：整间屋子的光，都是从这幅画里照出来的。\n画上的窗帘……好像拉得动。LAN：按 Space，让我来。")
 		_show_space_prompt()
 	elif s04_uv_on and s04_win_t >= 0.5 and not s04_handle_found:
 		s04_handle_found = true
@@ -2546,7 +3805,7 @@ func _s04_look_at_window() -> void:
 	elif s04_girl_caught and not s04_handle_found:
 		_show_dialogue("《窗》上看不出把手。\n（那个小影子在上面画过东西。）")
 	else:
-		_show_dialogue("《窗》：现在是「" + S04_PRESET_NAMES[s04_window] + "」。\nBlue Lake 可以拉它的窗帘。")
+		_show_dialogue("《窗》：现在是「" + S04_PRESET_NAMES[s04_window] + "」。\nLAN 可以拉它的窗帘。")
 
 func _s04_look_at_girl() -> void:
 	if s04_girl_out and not s04_girl_caught:
@@ -2567,18 +3826,18 @@ func _try_s04_chalk_interaction() -> void:
 	if chalk_hover_target.begins_with("Signal"):
 		var index := int(chalk_hover_target.substr(6))
 		if index != s04_signal_progress:
-			_show_dialogue("Blue Lake：不对，信号不是从这里开始的。\n顺着它流的方向描。")
+			_show_dialogue("LAN：不对，信号不是从这里开始的。\n顺着它流的方向描。")
 			return
 		s04_signal_progress += 1
 		if s04_signal_progress < S04_SIGNAL_NODES.size():
-			_show_dialogue("Blue Lake：……接着描。")
+			_show_dialogue("LAN：……接着描。")
 		else:
 			s04_signal_traced = true
 			chapter_state.mark_event(&"s04_signal_traced")
 			if s04_window == "mid":
 				_s04_repair_starry()
 			else:
-				_show_dialogue("Blue Lake：线描好了。\n可是太暗，修复师看不见。")
+				_show_dialogue("LAN：线描好了。\n可是太暗，修复师看不见。")
 		queue_redraw()
 		return
 	if chalk_hover_target != "S04Window":
@@ -2588,17 +3847,17 @@ func _try_s04_chalk_interaction() -> void:
 	chapter_state.mark_event(StringName("s04_window_" + next))
 	match next:
 		"cone":
-			_show_dialogue("Blue Lake：全开。亮的、鲜艳的、不动的。")
+			_show_dialogue("LAN：全开。亮的、鲜艳的、不动的。")
 		"mid":
-			_show_dialogue("Blue Lake：半掩。黄昏。两种东西都看得见一点。")
+			_show_dialogue("LAN：半掩。黄昏。两种东西都看得见一点。")
 		"rod":
-			_show_dialogue("Blue Lake：全合。灰的、暗的……可是有东西在动。")
+			_show_dialogue("LAN：全合。灰的、暗的……可是有东西在动。")
 	if next == "cone" and s04_girl_out and not s04_girl_caught:
 		if absf(s04_girl_x - S04_RESTORER_FRONT) <= S04_CATCH_RANGE:
 			_s04_catch_girl()
 		else:
 			s04_girl_frozen = true
-			_show_dialogue("她停在了半路，一动不动。修复师背对着她，什么也没看见。\nBlue Lake：要在修复师的正前方停住她。")
+			_show_dialogue("她停在了半路，一动不动。修复师背对着她，什么也没看见。\nLAN：要在修复师的正前方停住她。")
 	_s04_update_objective()
 	queue_redraw()
 
@@ -2623,7 +3882,7 @@ func _s04_recognized() -> void:
 	_s04_say([
 		"参观者：是——\n参观者：那个——\n参观者：修灯的人。",
 		"参观者们：那年冬天，你把灯修好了。\n我们一直在等，想再看你一次。",
-		"（他们看不清你的脸。可他们记得你走路的样子。）\nBlue Lake：原来认出一个人，不一定要看见她的脸。",
+		"（他们看不清你的脸。可他们记得你走路的样子。）\nLAN：原来认出一个人，不一定要看见她的脸。",
 		"参观者：那个小影子，总在《窗》前面停一停。\n她在上面画了东西。"
 	])
 	_s04_update_objective()
@@ -2633,7 +3892,7 @@ func _s04_check_complete() -> void:
 	if s04_finish_pending or not (s04_visitors_recognized and s04_handle_found and s04_frame_installed):
 		return
 	s04_finish_pending = true
-	var closing := "Blue Lake：有窗框，有把手。\n……它现在不只是一幅画了。"
+	var closing := "LAN：有窗框，有把手。\n……它现在不只是一幅画了。"
 	if s04_lines.is_empty():
 		_s04_say([closing])
 	else:
@@ -3210,7 +4469,7 @@ func _s05_enter_hall() -> void:
 	_s05_say([
 		"（窗里的景色越来越近——格雷汉站在红房子的门口。在一幅画里。）",
 		"（画外面是一间很深的展厅。梯子上有个人，正在擦一座空展架。）\n清洁工（远远地）：又来了一件小展品。……编号，贴上。",
-		"（一张标签飞过来，贴在格雷汉的袖子上。）\nBlue Lake：在他眼里，你现在大概只有一粒米那么大。"
+		"（一张标签飞过来，贴在格雷汉的袖子上。）\nLAN：在他眼里，你现在大概只有一粒米那么大。"
 	])
 
 func _s05_hall_interact() -> void:
@@ -3255,7 +4514,7 @@ func _s05_cleaner_aside() -> String:
 func _s05_talk_to_cleaner() -> void:
 	if _s05_cleaner_size() != "normal":
 		if not s05_cleaner_met:
-			_show_dialogue(_s05_cleaner_aside() + "\nBlue Lake：地上有一对脚印。站到那儿试试？")
+			_show_dialogue(_s05_cleaner_aside() + "\nLAN：地上有一对脚印。站到那儿试试？")
 		else:
 			_show_dialogue(_s05_cleaner_aside())
 		return
@@ -3308,9 +4567,9 @@ func _s05_look_through_lens() -> void:
 	s05_view = "lens"
 	if not s05_lens_clean:
 		if s05_cleaner_met:
-			_show_dialogue("镜片上蒙着一层白雾，什么也看不清。\nBlue Lake：把镜片推到清洁区去。")
+			_show_dialogue("镜片上蒙着一层白雾，什么也看不清。\nLAN：把镜片推到清洁区去。")
 		else:
-			_show_dialogue("镜片上蒙着一层白雾，什么也看不清。\nBlue Lake：去问问那个擦东西的人。")
+			_show_dialogue("镜片上蒙着一层白雾，什么也看不清。\nLAN：去问问那个擦东西的人。")
 	elif s05_lens_notch != S05_FOCUS_NOTCH:
 		var d := s05_lens_notch - S05_FOCUS_NOTCH
 		_show_dialogue("最后一行的 C 糊成一片。\n镜片离目镜太" + ("远" if d > 0 else "近") + "了，往" + ("回拉" if d > 0 else "里推") + " %d 格试试。" % absi(d))
@@ -3321,7 +4580,7 @@ func _s05_look_through_lens() -> void:
 		_s05_say([
 			"看清了。最后一行：下，上，右，左……四格空展架。\n第五格不是空的。灰蒙蒙的玻璃后面，有八个小小的镜头，排成两行。",
 			"清洁工（远远地）：第五格？我把展品一件不落全搬下来了。那一格什么也没有。",
-			"格雷汉：……八只眼睛。\nBlue Lake：那我们就去擦一擦。"
+			"格雷汉：……八只眼睛。\nLAN：那我们就去擦一擦。"
 		])
 	else:
 		_show_dialogue("第五格里，八个小小的镜头。")
@@ -3469,7 +4728,7 @@ func _enter_s06_after_s05() -> void:
 	objective_label.text = "让清洁工看见第五格"
 	_hall_say([
 		"格雷汉：……八只眼睛，两行四个。\n阿姨也有八只眼睛。四对。",
-		"Blue Lake：他看不见那一格。也许得先让他看见“她”。\n那堆展品旁边有一盏落地灯。"
+		"LAN：他看不见那一格。也许得先让他看见“她”。\n那堆展品旁边有一盏落地灯。"
 	])
 	_update_ui()
 	queue_redraw()
@@ -3490,7 +4749,7 @@ func _try_s06_interact() -> void:
 			if not s06_lamp_on:
 				s06_lamp_on = true
 				chapter_state.mark_event(&"s06_lamp_on")
-				_show_dialogue("格雷汉打开落地灯。那堆展品的影子落在壁画上，大得吓人。\n一团乱糟糟的影子。Blue Lake：按 Space。我来挪一挪它们。")
+				_show_dialogue("格雷汉打开落地灯。那堆展品的影子落在壁画上，大得吓人。\n一团乱糟糟的影子。LAN：按 Space。我来挪一挪它们。")
 				_show_space_prompt()
 			else:
 				_show_dialogue("灯离那堆东西很近，所以影子很大。")
@@ -3500,14 +4759,14 @@ func _try_s06_interact() -> void:
 			elif s06_shadow_done:
 				_show_dialogue("从这边看只是一堆展品。墙上看，是阿姨。")
 			else:
-				_show_dialogue("大眼球、镜头盒、两把折叠支架、一串小透镜……\nBlue Lake：按 Space，用粉笔挪它们，看墙上的影子落在画里的什么地方。")
+				_show_dialogue("大眼球、镜头盒、两把折叠支架、一串小透镜……\nLAN：按 Space，用粉笔挪它们，看墙上的影子落在画里的什么地方。")
 		"Cleaner":
 			_s06_talk_to_cleaner()
 		"Rack":
 			if s06_sensor_revealed:
 				_show_dialogue("第五格里，一只蜘蛛形的视觉传感器，八只镜头。")
 			elif s06_case_clean:
-				_show_dialogue("玻璃擦干净了。里面……还是看不出是什么。灰扑扑的一团，分不出远近。\nBlue Lake：按 Space。")
+				_show_dialogue("玻璃擦干净了。里面……还是看不出是什么。灰扑扑的一团，分不出远近。\nLAN：按 Space。")
 				_show_space_prompt()
 			elif s06_has_card:
 				s05_view = "card"
@@ -3528,7 +4787,7 @@ func _s06_talk_to_cleaner() -> void:
 			chapter_state.mark_event(&"s06_card_received")
 			_hall_say([
 				"（从这么近看，清洁工大得顶到了天花板。他自言自语：）\n清洁工：第五格的卡片……放哪儿了。哦，在顶上。",
-				"（他随手从展架最顶上取下一张卡片，钉在了展架上。）\nBlue Lake：E 展架，看看那张卡。"
+				"（他随手从展架最顶上取下一张卡片，钉在了展架上。）\nLAN：E 展架，看看那张卡。"
 			])
 		else:
 			_show_dialogue(_s05_cleaner_aside())
@@ -3546,19 +4805,19 @@ func _s06_talk_to_cleaner() -> void:
 
 func _try_toggle_s06_blue_lake() -> void:
 	if not s06_lamp_on:
-		_show_dialogue("Blue Lake：先把灯打开。")
+		_show_dialogue("LAN：先把灯打开。")
 		return
 	if not blue_lake_active and not blue_lake_transform_completed:
 		player.input_locked = true
 		_hide_space_prompt()
-		_show_dialogue("Blue Lake：看墙上的影子。")
+		_show_dialogue("LAN：看墙上的影子。")
 		blue_lake_transform.play()
 		return
 	blue_lake_active = not blue_lake_active
 	chalk_cursor.set_active(blue_lake_active)
 	visual_mode = "Chalk Interaction" if blue_lake_active else "Standard"
 	_hide_space_prompt()
-	_show_dialogue("Blue Lake：" + (_s06_chalk_hint() if blue_lake_active else "……先收起来。"))
+	_show_dialogue("LAN：" + (_s06_chalk_hint() if blue_lake_active else "……先收起来。"))
 	_update_ui()
 	queue_redraw()
 
@@ -3578,9 +4837,9 @@ func _try_s06_chalk_interaction() -> void:
 		if _s06_shadow_is_kent():
 			_s06_shadow_complete()
 		elif s06_pieces[piece] == S06_PIECE_CORRECT[piece]:
-			_show_dialogue("Blue Lake：挪了挪" + S06_PIECE_NAMES[piece] + "。……咔。这一块的影子对上了。")
+			_show_dialogue("LAN：挪了挪" + S06_PIECE_NAMES[piece] + "。……咔。这一块的影子对上了。")
 		else:
-			_show_dialogue("Blue Lake：挪了挪" + S06_PIECE_NAMES[piece] + "。墙上的影子跟着动了。")
+			_show_dialogue("LAN：挪了挪" + S06_PIECE_NAMES[piece] + "。墙上的影子跟着动了。")
 	elif chalk_hover_target == "SensorCase" and s06_case_clean and not s06_sensor_revealed:
 		_s06_reveal_sensor()
 	queue_redraw()
@@ -3599,7 +4858,7 @@ func _s06_shadow_complete() -> void:
 	chapter_state.mark_event(&"s06_shadow_is_kent")
 	_hall_say([
 		"墙上的影子是一只八只眼睛的蜘蛛：眼睛在红房子的窗里，脚踩在草地上。\n格雷汉：……阿姨。",
-		"Blue Lake：八只眼睛都在看同一个地方。\n格雷汉：第五格。去叫清洁工看看。"
+		"LAN：八只眼睛都在看同一个地方。\n格雷汉：第五格。去叫清洁工看看。"
 	])
 
 func _s06_cleaner_climbs_in() -> void:
@@ -3623,8 +4882,8 @@ func _s06_reveal_sensor() -> void:
 	chapter_state.mark_event(&"s06_kent_optical_part_revealed")
 	chapter_state.learn(&"s06_invisible_does_not_mean_nonexistent")
 	_hall_say([
-		"Blue Lake 借来阿姨看东西的方式：清楚的是近处，模糊的是远处。\n那团灰忽然有了前后——",
-		"第五格里是一只蜘蛛形的视觉传感器，八只镜头，两行四个。\nBlue Lake：这里刚才明明什么都没有。",
+		"LAN 借来阿姨看东西的方式：清楚的是近处，模糊的是远处。\n那团灰忽然有了前后——",
+		"第五格里是一只蜘蛛形的视觉传感器，八只镜头，两行四个。\nLAN：这里刚才明明什么都没有。",
 		"格雷汉：这个型号……和阿姨坏掉的那只一模一样。\n早就停产了。我找了好几年。"
 	])
 
@@ -3699,7 +4958,7 @@ func _enter_s07_after_s06() -> void:
 	objective_label.text = "拿走传感器 · （可选）四个空展台，四扇窗"
 	_hall_say([
 		"清洁工：四个展台，空了很多年了。说明牌上画着红房子，一个展台一扇窗。",
-		"Blue Lake：红房子的窗……按 Space，我用粉笔推开它们看看。\n目镜也能看见那几扇窗，镜片的位置不同，看清的窗也不同。"
+		"LAN：红房子的窗……按 Space，我用粉笔推开它们看看。\n目镜也能看见那几扇窗，镜片的位置不同，看清的窗也不同。"
 	])
 	_update_ui()
 	queue_redraw()
@@ -3763,16 +5022,16 @@ func _try_toggle_s07_blue_lake() -> void:
 	if not blue_lake_active and not blue_lake_transform_completed:
 		player.input_locked = true
 		_hide_space_prompt()
-		_show_dialogue("Blue Lake：看窗。")
+		_show_dialogue("LAN：看窗。")
 		blue_lake_transform.play()
 		return
 	blue_lake_active = not blue_lake_active
 	chalk_cursor.set_active(blue_lake_active)
 	visual_mode = "Chalk Interaction" if blue_lake_active else "Standard"
 	if blue_lake_active:
-		_show_dialogue("Blue Lake：" + ("用粉笔点红房子的一扇窗。" if s07_room == "hall" else "用粉笔点那扇“窗”，回展厅去。"))
+		_show_dialogue("LAN：" + ("用粉笔点红房子的一扇窗。" if s07_room == "hall" else "用粉笔点那扇“窗”，回展厅去。"))
 	else:
-		_show_dialogue("Blue Lake：……先收起来。")
+		_show_dialogue("LAN：……先收起来。")
 	_update_ui()
 	queue_redraw()
 
@@ -3946,10 +5205,10 @@ func _s08_to_stage() -> void:
 func _try_s08_interact() -> void:
 	if not s08_active or scene_state != "gallery" or transition_started:
 		return
-	_show_dialogue("Blue Lake：别停！跑！")
+	_show_dialogue("LAN：别停！跑！")
 
 func _try_toggle_s08_blue_lake() -> void:
-	_show_dialogue("Blue Lake：别看了，跑！")
+	_show_dialogue("LAN：别看了，跑！")
 
 func _try_s08_chalk_interaction() -> void:
 	pass
@@ -3989,25 +5248,25 @@ func _try_s05_interact() -> void:
 	if not s05_window_observed:
 		s05_window_observed = true
 		chapter_state.mark_event(&"s05_window_observed")
-	_show_dialogue("《窗》：窗外是蓝天和草地。现在它有了窗框，也有了把手（右边那一小块）。\nBlue Lake：按 Space，再用粉笔点一下《窗》，就能打开它。")
+	_show_dialogue("《窗》：窗外是蓝天和草地。现在它有了窗框，也有了把手（右边那一小块）。\nLAN：按 Space，再用粉笔点一下《窗》，就能打开它。")
 	_show_space_prompt()
 	queue_redraw()
 
 func _try_toggle_s05_blue_lake() -> void:
 	if s05_room == "hall":
-		_show_dialogue("Blue Lake：在这里，我看什么都差不多大。")
+		_show_dialogue("LAN：在这里，我看什么都差不多大。")
 		return
 	if not blue_lake_active and not blue_lake_transform_completed:
 		player.input_locked = true
 		_hide_space_prompt()
-		_show_dialogue("Blue Lake：看。")
+		_show_dialogue("LAN：看。")
 		blue_lake_transform.play()
 		return
 	blue_lake_active = not blue_lake_active
 	chalk_cursor.set_active(blue_lake_active)
 	visual_mode = "Chalk Interaction" if blue_lake_active else "Standard"
 	_hide_space_prompt()
-	_show_dialogue("Blue Lake：" + ("把粉笔移到《窗》上（哪里都行），点左键。" if blue_lake_active else "……先收起来。"))
+	_show_dialogue("LAN：" + ("把粉笔移到《窗》上（哪里都行），点左键。" if blue_lake_active else "……先收起来。"))
 	_update_ui()
 	queue_redraw()
 
@@ -4022,7 +5281,7 @@ func _try_s05_chalk_interaction() -> void:
 	chapter_state.mark_event(&"s05_window_opened")
 	chapter_state.learn(&"s05_blue_lake_can_change_the_world")
 	chapter_state.set_player_goal(&"understand_the_window")
-	_show_dialogue("Blue Lake：你把一幅画……打开了。")
+	_show_dialogue("LAN：你把一幅画……打开了。")
 	objective_label.text = "《窗》打开了。"
 	player.input_locked = true
 	s05_enter_anim = 0.0
@@ -4056,7 +5315,7 @@ func _enter_s05_after_s04() -> void:
 	chapter_state.set_player_goal(&"find_the_window")
 	chapter_state.mark_story_event(&"s05_started")
 	objective_label.text = "打开《窗》：Space，再用粉笔点它"
-	_show_dialogue("Blue Lake：有窗框，有把手。……按 Space，我们去打开它。")
+	_show_dialogue("LAN：有窗框，有把手。……按 Space，我们去打开它。")
 	_show_space_prompt()
 	_update_ui()
 	queue_redraw()
@@ -4115,7 +5374,7 @@ func _enter_s04_after_s03() -> void:
 	chapter_state.set_player_goal(&"recognize_the_visitor")
 	chapter_state.mark_story_event(&"s04_started")
 	objective_label.text = "这间屋子的光从哪里来？"
-	_show_dialogue("（这间展厅很亮。光全是从中间那幅画里照出来的。）\nBlue Lake：你刚才相信了一个眼睛看不到的东西。")
+	_show_dialogue("（这间展厅很亮。光全是从中间那幅画里照出来的。）\nLAN：你刚才相信了一个眼睛看不到的东西。")
 	_update_ui()
 	queue_redraw()
 
@@ -4161,7 +5420,7 @@ func _enter_s03_after_s02() -> void:
 	chapter_state.set_player_goal(&"find_the_light")
 	chapter_state.mark_story_event(&"s03_started")
 	objective_label.text = "找到光"
-	_show_dialogue("蓝湖：太暗了，什么都看不清。\n……先找到光。")
+	_show_dialogue("LAN：太暗了，什么都看不清。\n……先找到光。")
 	_update_ui()
 	queue_redraw()
 
@@ -4401,6 +5660,16 @@ func _update_interaction_hint() -> void:
 			interaction_hint_label.position = Vector2(s03_ride_x - 20.0, 398.0)
 			interaction_hint_label.show()
 		return
+	if s01_active and closeup != "":
+		var closeup_hint := _s01_closeup_hint()
+		if closeup_hint == "":
+			interaction_hint_label.hide()
+		else:
+			var shown: Rect2 = CLOSEUP_RECTS[_closeup_kind()]
+			interaction_hint_label.text = closeup_hint
+			interaction_hint_label.position = Vector2(shown.get_center().x - 7.0 * closeup_hint.length(), shown.end.y + 8.0)
+			interaction_hint_label.show()
+		return
 	if space_prompt_visible:
 		interaction_hint_label.text = "SPACE  使用蓝湖"
 		interaction_hint_label.position = Vector2(500, 455)
@@ -4419,8 +5688,10 @@ func _update_interaction_hint() -> void:
 			interaction_hint_label.text = "E 往前拨"
 		elif n == "ExitDoor" and s01_gate_open:
 			interaction_hint_label.text = "E 进门"
-		elif n == "ExitDoor" and s01_key_on_hook:
-			interaction_hint_label.text = "E 取钥匙开门"
+		elif n == "ExitDoor" and s01_has_key:
+			interaction_hint_label.text = "E 开门"
+		elif n == "CommunityMap" and s01_has_chalk and not s01_has_key:
+			interaction_hint_label.text = "E 拿出粉笔"
 	if s03_active:
 		var n3: String = nearest.get("name", "")
 		if n3 == "PictureLamp" and not s03_eye_lit:
