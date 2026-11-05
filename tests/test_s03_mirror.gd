@@ -46,7 +46,7 @@ func _run() -> void:
 
 	# The belt still runs: Graham cannot cross the axis.
 	await _hold("move_right", 200)
-	_check(main.player.position.x < main.S02_AXIS_X + 4.0, "the belt still holds Graham back (x=%d)" % main.player.position.x)
+	_check(main.player.position.x < main.S02_BELT_FULL, "the belt still holds Graham back (x=%d)" % main.player.position.x)
 
 	await _walk_to_x(main.S03_PICTURE_LAMP.x)
 	await _press_e_expecting("PictureLamp")
@@ -64,7 +64,12 @@ func _run() -> void:
 	for i in range(main.S03_LAMP_GOOD):
 		var miss: Vector2 = main._s03_reflection_end(i)
 		_check(absf(miss.x - main.S02_AXIS_X) > main.S02_LIGHT_HALF, "angle %d really misses (x=%d)" % [i, miss.x])
-	await create_timer(3.2).timeout
+	_check(main.dialogue_label.text.contains("Space") and main.space_prompt_visible, "right away, Blue Lake says to press Space")
+	await create_timer(1.0).timeout
+	_check(not main.s03_busy, "no long wait after the eye lights up")
+	await _walk_to_x(main.S02_AXIS_X)
+	await _press_e_expecting("SculptureVenus")
+	_check(main.dialogue_label.text.contains("Space") and main.space_prompt_visible, "E Venus (eye lit): Blue Lake reminds Space")
 	await _shot("s03_3_eye_lit")
 
 	await _press("blue_lake")

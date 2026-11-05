@@ -55,6 +55,7 @@ func _run() -> void:
 	_check(main.dialogue_label.text.contains("轮廓"), "in the dark Venus is only an outline")
 	await _shot("s02_2_venus_light")
 
+	_check(main._s02_belt_pull(500.0) == 0.0 and main._s02_belt_pull(main.S02_AXIS_X) == 0.0, "no belt at 《光》 or Venus: they can be looked at in peace")
 	# Keep walking right: the belt matches her pace at the axis.
 	var max_x := 0.0
 	Input.action_press("move_right")
@@ -64,7 +65,7 @@ func _run() -> void:
 	await _shot("s02_3_stalled")
 	Input.action_release("move_right")
 	_check(main.s02_belt_stalled, "walking right stalls on the belt")
-	_check(max_x < main.S02_AXIS_X + 4.0, "Graham never crosses the axis (max x=%d)" % max_x)
+	_check(max_x > main.S02_AXIS_X and max_x < main.S02_BELT_FULL, "she gets a little past the middle, then the belt holds her (max x=%d)" % max_x)
 
 	# Standing still, the belt carries her back to the door.
 	for i in range(900):
@@ -74,7 +75,8 @@ func _run() -> void:
 	_check(main.s02_carried_back, "the belt carried Graham back (x=%d)" % main.player.position.x)
 	_check(main.player.position.x <= main.S02_BELT_START + 13.0, "she ends up back on the still carpet (x=%d)" % main.player.position.x)
 
-	# Easter egg: keep standing still and Blue Lake's figure develops on the 里 side.
+	# Easter egg: step back onto the 表 side, stand still, and Blue Lake's figure develops on the 里 side.
+	await _walk_to_x(450.0)
 	for i in range(900):
 		await physics_frame
 		if main.s02_figure_alpha > 0.7:

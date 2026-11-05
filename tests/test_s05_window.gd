@@ -27,6 +27,7 @@ func _run() -> void:
 	main._enter_s05_after_s04()
 	await _frames(2)
 	_check(main.s05_active and main.s05_room == "window", "S05 starts in front of 《窗》")
+	_check(main.space_prompt_visible and main.objective_label.text.contains("Space"), "S05 opens with the Space prompt and says how to open 《窗》")
 
 	await _press_e_expecting("Window")
 	_check(main.s05_window_observed, "E observes 《窗》")
@@ -36,6 +37,7 @@ func _run() -> void:
 	await main.blue_lake_transform.finished
 	await _frames(2)
 	_check(main.blue_lake_active, "Space enters Blue Lake")
+	await _shot("s05_1b_blue_lake_window")
 	main.chalk_hover_target = "Window"
 	main._try_s05_chalk_interaction()
 	_check(main.s05_window_open, "Chalk on the handle opens 《窗》")

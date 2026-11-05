@@ -24,8 +24,8 @@ const S01_HINT_AFTER := 12.0                   # seconds without progress before
 const S02_AXIS_X := 552.0
 # The runner carpet slowly becomes a conveyor belt that runs back toward the entrance.
 # Its pull grows from nothing at S02_BELT_START to Graham's full walking speed at S02_BELT_FULL.
-const S02_BELT_START := 400.0                  # the carpet is still up to here (so the lamp and painting can be used)
-const S02_BELT_FULL := 556.0
+const S02_BELT_START := 560.0                  # the carpet is still up to just right of the axis (lamp, paintings, 《光》 and Venus all usable)
+const S02_BELT_FULL := 690.0
 const S02_BELT_MIN_DRIFT := 45.0
 const S02_DOOR_RECT := Rect2(92, 270, 52, 102)
 const S02_GUARD_X := 190.0
@@ -34,8 +34,8 @@ const S02_LIGHT_TOP := 170.0                   # the inverted prism's base (top 
 const S02_LIGHT_HALF := 35.0
 const S02_LIGHT_APEX_Y := 192.0
 const S02_EYE := Vector2(552, 229)             # where the crossed beams meet: Venus's missing eyes
-const S02_STALL_X := 525.0
-const S02_FIGURE_AFTER := 5.0                  # seconds standing still before Blue Lake's figure shows
+const S02_STALL_X := 650.0
+const S02_FIGURE_AFTER := 2.5                  # seconds standing still before Blue Lake's figure shows
 # S03: the picture lamp over 《那喀索斯》 and the real water at the bottom of the frame.
 const S03_PICTURE_LAMP := Vector2(250, 200)
 const S03_WATER_Y := 304.0
@@ -1636,7 +1636,7 @@ func _finish_blue_lake_transformation() -> void:
 	elif s04_active:
 		_show_dialogue("Blue Lake：把粉笔移到《窗》上，点一下，拉窗帘。")
 	elif s05_active:
-		_show_dialogue("Blue Lake：现在，把粉笔移到《窗》上，点左键。")
+		_show_dialogue("Blue Lake：现在，把粉笔移到《窗》上（哪里都行），点左键。")
 	elif s06_active:
 		_show_dialogue("Blue Lake：" + _s06_chalk_hint())
 	elif s07_active:
@@ -2023,6 +2023,12 @@ func _try_s03_interact() -> void:
 		_s03_use_picture_lamp()
 	elif object_name == "SculptureVenus" and ((s03_left_arm_ready and not s03_left_installed) or (s03_right_arm_ready and not s03_right_installed)):
 		_s03_install_arms()
+	elif object_name == "SculptureVenus" and s03_eye_lit and not s03_mirror_held:
+		if s03_hands_seen:
+			_show_dialogue("《机械维纳斯》：没有手臂。光在她眼睛的位置交汇。\n蓝湖：按 Space，可以再借她的眼睛看一次。")
+		else:
+			_show_dialogue("《机械维纳斯》：光在她眼睛的位置交汇。\n蓝湖：按 Space，借她的眼睛看看。")
+		_show_space_prompt()
 	elif object_name == "SecurityGuard":
 		if s03_left_installed:
 			_show_dialogue("保安揉着肩膀：……我都忘了自己为什么举着它。")
@@ -2079,12 +2085,11 @@ func _s03_light_the_eye() -> void:
 	s03_eye_lit = true
 	s03_busy = true
 	chapter_state.mark_event(&"s03_venus_eye_lit")
-	_show_dialogue("水面亮了。少年第一次看见了水里的自己。\n反射的光射进棱镜——对面那幅画也亮了。两束光在棱镜里交叉，落在维纳斯的眼睛上。")
-	await get_tree().create_timer(2.8).timeout
-	s03_busy = false
-	objective_label.text = "借维纳斯的眼睛"
-	_show_dialogue("蓝湖：……她看得见了。\n按 Space，让我借她的眼睛看看。")
+	objective_label.text = "借维纳斯的眼睛（Space）"
+	_show_dialogue("水面亮了。反射的光射进棱镜，两束光交叉，落在维纳斯的眼睛上。\n蓝湖：……她看得见了。按 Space，让我借她的眼睛看看。")
 	_show_space_prompt()
+	await get_tree().create_timer(0.6).timeout
+	s03_busy = false
 
 func _s03_cross_by_reflection() -> void:
 	var reflected_x := _s02_mx(player.position.x)
@@ -2721,8 +2726,15 @@ func _draw_s05_gallery() -> void:
 	_draw_s04_gallery()
 	var w := S05_WINDOW_CENTER
 	if blue_lake_active and not s05_window_open:
-		var glow := 0.8 if chalk_hover_target == "Window" else 0.4
-		draw_arc(w + Vector2(34, 0), 16.0, 0.0, TAU, 20, Color(0.75, 0.91, 1.0, glow), 2.0)
+		# The whole frame is the target; the handle pulses so it is clear what opens it.
+		var hover := chalk_hover_target == "Window"
+		var pulse := 0.5 + 0.5 * sin(Time.get_ticks_msec() * 0.006)
+		draw_rect(Rect2(w - Vector2(53, 58), Vector2(106, 116)).grow(6.0), Color(0.75, 0.91, 1.0, 0.95 if hover else 0.45), false, 3.0 if hover else 2.0)
+		draw_circle(w + Vector2(33, 0), 10.0 + 4.0 * pulse, Color(0.75, 0.91, 1.0, 0.25 + 0.25 * pulse))
+		draw_arc(w + Vector2(33, 0), 14.0, 0.0, TAU, 20, Color(0.75, 0.91, 1.0, 0.9), 2.0)
+	elif not s05_window_open and s05_room == "window":
+		# Before Blue Lake: the handle still catches the eye.
+		draw_arc(w + Vector2(33, 0), 12.0 + 2.0 * sin(Time.get_ticks_msec() * 0.005), 0.0, TAU, 20, Color(0.96, 0.9, 0.65, 0.6), 1.5)
 	if s05_enter_anim >= 0.0:
 		# The view inside the frame grows until it is the room Graham stands in.
 		var t := s05_enter_anim * s05_enter_anim
@@ -3977,19 +3989,13 @@ func _try_s05_interact() -> void:
 	if not s05_window_observed:
 		s05_window_observed = true
 		chapter_state.mark_event(&"s05_window_observed")
-		_show_dialogue("《窗》：窗外是蓝天和草地。\n现在它有了窗框，也有了把手。Blue Lake：按 Space。")
-		_show_space_prompt()
-	else:
-		_show_dialogue("Blue Lake：按 Space，用粉笔碰一碰把手。")
-		_show_space_prompt()
+	_show_dialogue("《窗》：窗外是蓝天和草地。现在它有了窗框，也有了把手（右边那一小块）。\nBlue Lake：按 Space，再用粉笔点一下《窗》，就能打开它。")
+	_show_space_prompt()
 	queue_redraw()
 
 func _try_toggle_s05_blue_lake() -> void:
 	if s05_room == "hall":
 		_show_dialogue("Blue Lake：在这里，我看什么都差不多大。")
-		return
-	if not s05_window_observed:
-		_show_dialogue("Blue Lake：先看清楚《窗》。")
 		return
 	if not blue_lake_active and not blue_lake_transform_completed:
 		player.input_locked = true
@@ -4001,7 +4007,7 @@ func _try_toggle_s05_blue_lake() -> void:
 	chalk_cursor.set_active(blue_lake_active)
 	visual_mode = "Chalk Interaction" if blue_lake_active else "Standard"
 	_hide_space_prompt()
-	_show_dialogue("Blue Lake：" + ("把粉笔移到把手上，点左键。" if blue_lake_active else "……先收起来。"))
+	_show_dialogue("Blue Lake：" + ("把粉笔移到《窗》上（哪里都行），点左键。" if blue_lake_active else "……先收起来。"))
 	_update_ui()
 	queue_redraw()
 
@@ -4049,8 +4055,9 @@ func _enter_s05_after_s04() -> void:
 	chapter_state.set_map_state(&"Museum_S05_Window")
 	chapter_state.set_player_goal(&"find_the_window")
 	chapter_state.mark_story_event(&"s05_started")
-	objective_label.text = "打开《窗》"
-	_show_dialogue("Blue Lake：有窗框，有把手。……去打开它。")
+	objective_label.text = "打开《窗》：Space，再用粉笔点它"
+	_show_dialogue("Blue Lake：有窗框，有把手。……按 Space，我们去打开它。")
+	_show_space_prompt()
 	_update_ui()
 	queue_redraw()
 
@@ -4380,6 +4387,8 @@ func _update_interaction_hint() -> void:
 		interaction_hint_label.text = "左键 使用蓝湖"
 		if s04_active:
 			interaction_hint_label.text = "左键 拉窗帘" if chalk_hover_target == "S04Window" else "左键 描"
+		elif s05_active and chalk_hover_target == "Window":
+			interaction_hint_label.text = "左键 打开《窗》"
 		interaction_hint_label.position = get_viewport().get_mouse_position() + Vector2(14, -22)
 		interaction_hint_label.show()
 		return
@@ -4471,7 +4480,8 @@ func _update_chalk_hover() -> void:
 		if chalk_hover_target == "" and mouse_position.distance_to(S05_WINDOW_CENTER) <= 62.0:
 			chalk_hover_target = "S04Window"
 	elif S05_ENABLED and s05_active:
-		if not s05_window_open and mouse_position.distance_to(S05_WINDOW_CENTER) <= 62.0:
+		# The whole framed painting (and a margin around it) opens it, not just the small handle.
+		if s05_room == "window" and not s05_window_open and Rect2(S05_WINDOW_CENTER - Vector2(53, 58), Vector2(106, 116)).grow(28.0).has_point(mouse_position):
 			chalk_hover_target = "Window"
 	elif S06_ENABLED and s06_active:
 		if s06_lamp_on and not s06_shadow_done:
