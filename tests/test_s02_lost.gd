@@ -44,16 +44,28 @@ func _run() -> void:
 	_check(main.s02_guard_asked, "the guard was asked")
 	_check(main.dialogue_label.text.contains("出口在对面"), "the guard points across")
 	_check(not main.s02_completion_started, "asking the guard alone does not complete S02")
+	_check(main.closeup == "guard", "the guard is a close-up")
+	await _shot("s02_1b_guard_closeup")
+	await _close()
 
 	await _walk_to_x(330.0)
 	await _press_e_expecting("Narcissus")
-	_check(main.dialogue_label.text.contains("水"), "《那喀索斯》 hints at water in the dark")
-	await _walk_to_x(500.0)
-	await _press_e_expecting("SculptureLight")
+	_check(main.closeup == "narcissus" and main.dialogue_label.text.contains("水"), "《那喀索斯》 (with its lamp) is one big close-up; water in the dark")
+	await _hand_to(Vector2(300, 352))
+	_check(main.interaction_hint_label.text.contains("E 碰一碰"), "the hand is over the water (%s)" % main.interaction_hint_label.text)
+	await _press("interact")
+	_check(main.closeup_anim == "ripple" and main.s02_ripple_left > 0.0 and main.dialogue_label.text.contains("凉"), "the real water can be disturbed")
+	await create_timer(0.5).timeout
+	await _shot("s02_1c_ripple")
+	await create_timer(1.1).timeout
+	await _hand_to(Vector2(300, 200))
+	await _close()
+	_check(main.s02_ripple_left > 0.0, "back in the hall the water is still rippling")
 	await _walk_to_x(535.0)
 	await _press_e_expecting("SculptureVenus")
-	_check(main.dialogue_label.text.contains("轮廓"), "in the dark Venus is only an outline")
+	_check(main.closeup == "venus" and main.dialogue_label.text.contains("轮廓"), "Venus and 《光》 are one close-up; in the dark only an outline")
 	await _shot("s02_2_venus_light")
+	await _close()
 
 	_check(main._s02_belt_pull(500.0) == 0.0 and main._s02_belt_pull(main.S02_AXIS_X) == 0.0, "no belt at 《光》 or Venus: they can be looked at in peace")
 	# Keep walking right: the belt matches her pace at the axis.
@@ -116,6 +128,32 @@ func _press_e_expecting(item_name: String) -> void:
 	_check(nearest.get("name", "") == item_name, "at x=%d E targets %s, expected %s" % [main.player.position.x, nearest.get("name", "<nothing>"), item_name])
 	_check(main.interaction_hint_label.visible, "E hint visible at %s" % item_name)
 	await _press("interact")
+
+func _close() -> void:
+	await create_timer(0.35).timeout
+	await _press("interact")
+	await create_timer(0.45).timeout
+	_check(main.closeup == "", "close-up closed")
+
+func _hand_to(target: Vector2) -> void:
+	for i in range(600):
+		var d: Vector2 = target - main.closeup_hand
+		if d.length() < 5.0:
+			break
+		_hold_if("move_right", d.x > 3.0)
+		_hold_if("move_left", d.x < -3.0)
+		_hold_if("move_down", d.y > 3.0)
+		_hold_if("move_up", d.y < -3.0)
+		await process_frame
+	for a in ["move_right", "move_left", "move_down", "move_up"]:
+		Input.action_release(a)
+	await process_frame
+
+func _hold_if(action: String, on: bool) -> void:
+	if on:
+		Input.action_press(action)
+	else:
+		Input.action_release(action)
 
 func _walk_to_x(target: float) -> void:
 	var action := "move_right" if target > main.player.position.x else "move_left"

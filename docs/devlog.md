@@ -1285,3 +1285,106 @@ S01：
 
 ### 需要用户决定的
 - 所有新台词。
+
+---
+
+## 2026-11-05（下午）— S01 照片小谜题与眼皮、S02/S03 特写、S04 特写（Claude，经 Claude 会话）
+
+### 用户的决定
+- **S01：**
+  - 彩带改由修复师画出来，再由保安剪掉；LAN（小女孩）去玩断掉的彩带，顺手把粉笔递给你，照片本身成为一个小解谜。
+  - 拉眼皮改为主动操作：鱼眼里 W/S 凑近，瞳孔随之缩放；凑到最近看见眼皮，E 拉下；房间黑了再亮。
+  - 成就走游戏平台，不在游戏里弹窗。
+  - 格雷汉右眼角有一颗痣。
+  - 音效现在不做。
+- **S02/S03：**
+  - 9 个 E 点合并为 3 个特写 + LAN 视角，用户认可。
+  - 《那喀索斯》加“水可以扰动”的互动，但不做与骷髅画的联动，也不做碰保安、盆景掉叶子。
+  - 维纳斯：用蓝湖（粉笔）拖动安装手臂；之后 E 换姿势，保留 4 个干扰姿势 + 1 个正确姿势。正确姿势是双手合十再分开，从正面只看得到镜子的厚度。退出特写才发现房间亮了、对面有倒影。
+  - LAN 视角用蓝湖层画风。
+  - “第一次蓝湖变形在哪”不用纠结。
+- **S04：**
+  - 5 个特写方案、视线 / 余光玩法、少女被定住时的超写实插帧，用户都认可（“设计非常棒”）。
+  - 补充一：抹核黄素做成互动，由玩家自己抹，**只抹在格雷汉身上**。
+  - 补充二：少女的表情多一些。
+- 用户试玩时指出：S03 开门的特写转场没做（本轮已补）；S03 装手臂和 S04 描星空的特写盖住了粉笔光标（已修）。
+
+### 做了什么
+- 详见 `AGENTS.md` 第 5 节 2026-11-05 的几条和 `docs/design/s04_参观者.md` 第 0.5 节。要点：
+  - 特写系统推广到 S02–S04：
+    - `_hall_open()` / `_hall_closeup_press_e()` / `_hall_closeup_hint()` / `_hall_closeup_space()`。
+    - S04 相关：`_s04_closeup_press_e()` / `_s04_closeup_hint()`。
+    - 大特写里的手、视线、刷子统一用 `closeup_hand`（原 `s01_photo_hand`）。
+  - S02/S03：
+    - 保安：`_draw_closeup_guard()`，摘手套的超写实插帧 `marble`。
+    - 《那喀索斯》：`_draw_closeup_narcissus()`，涟漪 `ripple`，房间里的水再晃 6 秒（`s02_ripple_left`）。
+    - 维纳斯：`_draw_closeup_venus()`、`VENUS_POSES`、`_venus_grab()` / `_venus_drop()` / `_venus_next_pose()`，粉笔拖动走 `_input()`。
+    - LAN 视角：`_draw_closeup_lan()`，骑行在特写打开时暂停。
+    - 开门转场：`_draw_closeup_swap()`。
+    - 删除旧的 `_s03_install_arms()` / `_s03_mirror_appears()`。
+    - 交互点合并：画灯并入《那喀索斯》，《光》并入维纳斯。
+  - S04：
+    - 修复台：`_draw_closeup_bench()`、`_s04_bench_signal_alpha()`、`_s04_bench_chalk()`；`_s04_trace()` 与房间粉笔共用，同时拆出 `_s04_pull_curtain()`。
+    - 抹核黄素：`_draw_closeup_smear()`、`S04_JOINTS`、`_s04_joint_hits()`；光点人 `_draw_point_light()`，格雷汉同时变暗。
+    - 少女：`_draw_closeup_s04_girl()`、`S04_GIRL_FACES`。
+    - 其他：`_draw_closeup_window()`、`_draw_closeup_visitor()`、`_draw_closeup_twins()`。
+    - 交互点合并：《星空》、修复师（正面 / 侧面）、工作台 → `Bench`。
+    - 参观者认人需要关节点 ≥ 8，否则会说“萤火虫”。
+  - 展厅里直接硬切的超写实插帧：`_hyper_flash_start()`，用于 `painted_eye`、`fluor`。`_draw_closeup()` 改为没有特写时也画光点人和插帧。
+  - S01：
+    - 彩带 → 剪 → 给粉笔的顺序。
+    - 眼皮改为 `s01_eye_zoom`。
+    - `_unlock_achievement()`（只记录，不弹窗）。
+    - 眼皮插帧的血管不再画出边框。
+  - 粉笔光标 `z_index = 100`，画在特写（50）上面。
+  - 特写整体下移，标题不再被顶栏挡住。
+  - `tools/run_tests.command` 带窗口也跑 S02–S04（截图）。
+- 所有新台词是 Claude 第一版。
+
+### 怎么测试的
+- 本机 `tools/run_tests.command`（11 月 5 日 12:30）：
+  - 解析检查、主场景 120 帧无错误。
+  - 10 个测试无界面全部 `TEST PASS`。
+  - S01–S04 带窗口也 `TEST PASS`。
+- 测试更新：
+  - `test_s01_enter.gd`：
+    - 小女孩在彩带剪断前不给粉笔。
+    - 保安在没有彩带时“等着剪”。
+    - 修复师画彩带，保安剪断，LAN 玩彩带给粉笔。
+  - `test_s01_future.gd`：
+    - W 凑近，眼皮出现。
+    - E 拉下眼皮，记下成就。
+    - 凑近时格雷汉不走动。
+  - `test_s02_lost.gd`：
+    - 保安、《那喀索斯》、维纳斯都是特写。
+    - 碰水起涟漪，回到房间水还在晃。
+  - `test_s03_mirror.gd`：
+    - 《那喀索斯》特写里修灯、扳角度。
+    - 摘手套时出现超写实插帧。
+    - LAN 门牌特写打开时骑行暂停。
+    - 粉笔拖手臂：接错侧被拒，左右各装上。
+    - 换 4 个姿势后，第 5 个出现镜子；退出后房间亮了。
+    - 无界面时直接调用拖动函数。
+  - `test_s04_visitor.gd`：
+    - 修复台特写里正面说话、侧面无视。
+    - 视线正中看不见信号，余光看得见。
+    - 粉笔描节点（乱序被拒）。
+    - 少女三组表情；空画框里的偷笑。
+    - 定住时出现超写实插帧；抓住少女。
+    - 抹 12 滴（10 滴在关节上）。
+    - 紫外灯下的荧光插帧；《窗》上 LAN 的手印。
+    - 光点人走过，参观者认出；装画框；进入 S05。
+    - 粉笔光标在特写之上。
+- 截图：
+  - `s02_1b_guard_closeup.png`、`s02_1c_ripple.png`
+  - `s03_2b_lamp_right_angle_closeup.png`、`s03_6_hyperreal_marble.png`、`s03_7_lan_tag_closeup.png`
+  - `s03_9b`–`s03_9d`（手臂、比耶、合十）
+  - `s04_1b_bench_closeup.png`、`s04_2b_corner_of_the_eye.png`、`s04_3b_girl_eyeroll.png`
+  - `s04_5_hyperreal_painted_eye.png`、`s04_6c_dabs.png`、`s04_6d_hyperreal_fluor.png`
+  - `s04_7_point_light_walker.png`
+
+### 还没做的 / 需要用户决定的
+- 所有新台词。
+- S07“全部归档”仍是游戏内显示，要改成平台成就。
+- 格雷汉的痣：只画在抹核黄素特写里，正式立绘时再加。
+- S05–S08 的特写（下一轮讨论）。

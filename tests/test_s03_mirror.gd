@@ -48,17 +48,24 @@ func _run() -> void:
 	await _hold("move_right", 200)
 	_check(main.player.position.x < main.S02_BELT_FULL, "the belt still holds Graham back (x=%d)" % main.player.position.x)
 
-	await _walk_to_x(main.S03_PICTURE_LAMP.x)
-	await _press_e_expecting("PictureLamp")
+	# 《那喀索斯》 and its picture lamp are one big close-up: the hand on the lamp, E fixes it, then turns it.
+	await _walk_to_x(315.0)
+	await _press_e_expecting("Narcissus")
+	_check(main.closeup == "narcissus", "the 《那喀索斯》 close-up")
+	await _hand_to(main._narc_map(main.S03_PICTURE_LAMP))
+	await _press("interact")
 	_check(main.s03_lamp_fixed, "E fixes the picture lamp")
 	_check(not main.s03_eye_lit, "fixing alone does not light the eye")
-	await _press_e_expecting("PictureLamp")
+	await _press("interact")
 	await _shot("s03_2_lamp_wrong_angle")
 	_check(not main.s03_eye_lit, "a wrong angle misses the prism")
-	await _press_e_expecting("PictureLamp")
+	await _press("interact")
 	_check(not main.s03_eye_lit, "another wrong angle misses the prism")
-	await _press_e_expecting("PictureLamp")
+	await _press("interact")
 	_check(main.s03_eye_lit, "the right angle reflects off the water into the prism")
+	await _shot("s03_2b_lamp_right_angle_closeup")
+	await _hand_to(Vector2(300, 200))
+	await _close()
 	var end: Vector2 = main._s03_reflection_end(main.S03_LAMP_GOOD)
 	_check(absf(end.x - main.S02_AXIS_X) <= main.S02_LIGHT_HALF, "the good reflection really reaches the prism (x=%d)" % end.x)
 	for i in range(main.S03_LAMP_GOOD):
@@ -104,8 +111,15 @@ func _run() -> void:
 
 	await _walk_to_x(main.S02_GUARD_X)
 	await _press_e_expecting("SecurityGuard")
+	await create_timer(0.4).timeout
+	_check(main.closeup == "guard" and main.interaction_hint_label.text == "E 那不是你的手吧", "in the guard's close-up (%s)" % main.interaction_hint_label.text)
+	await _press("interact")
+	await create_timer(0.9).timeout
+	_check(main._s01_hyper_now().size() == 2 and main._s01_hyper_now()[0] == "marble", "a hyper-real insert: the marble hand in his sweaty fingers")
+	await _shot("s03_6_hyperreal_marble")
+	await create_timer(1.3).timeout
 	_check(main.s03_glove_off, "the glove comes off")
-	await _shot("s03_6_glove")
+	await _shot("s03_6b_glove")
 	for i in range(100):
 		await create_timer(0.1).timeout
 		if main.s03_left_arm_ready and not main.s03_busy:
@@ -136,7 +150,12 @@ func _run() -> void:
 	_check(absf(main.s03_ride_x - main._s02_mx(main.S02_DOOR_RECT.get_center().x)) < 40.0, "the ride starts at the far door")
 	await _press("interact")
 	_check(main.dialogue_label.text.contains("格雷汉"), "the far door carries an inventory tag with Graham's name")
-	await _shot("s03_7_ride_start")
+	_check(main.closeup == "lan_tag", "LAN sees it up close, in the blue-lake layer")
+	var x_before: float = main.s03_ride_x
+	await create_timer(0.5).timeout
+	await _shot("s03_7_lan_tag_closeup")
+	_check(absf(main.s03_ride_x - x_before) < 0.5, "the ride waits while LAN looks")
+	await _close()
 	for i in range(100):
 		await create_timer(0.05).timeout
 		if absf(main.s03_ride_x - main.s03_pot_x) < 20.0:
@@ -157,14 +176,35 @@ func _run() -> void:
 	_check(absf(main.s03_pot_x - main.S03_POT_STOP) < 1.0, "the chain stops the pot in the warm light")
 	await _shot("s03_9_leaves_fallen")
 
+	# Venus's close-up: LAN's chalk drags each arm onto its shoulder; then E tries poses.
 	await _walk_to_x(538.0)
 	await _press_e_expecting("SculptureVenus")
-	_check(main.s03_left_installed and main.s03_right_installed, "Graham fits both arms in the middle")
-	for i in range(100):
-		await create_timer(0.1).timeout
-		if main.s03_mirror_held and not main.s03_busy:
-			break
-	_check(main.s03_mirror_held, "Venus holds the mirror")
+	_check(main.closeup == "venus" and main._venus_arm_waiting(), "Venus's close-up, arms waiting")
+	await create_timer(0.4).timeout
+	await _press("blue_lake")
+	_check(main.blue_lake_active, "Space brings out LAN's chalk inside the close-up")
+	await _drag_arm("left", "right")
+	_check(not main.s03_left_installed and main.dialogue_label.text.contains("接不上"), "marble does not fit the rusted side")
+	await _drag_arm("left", "left")
+	_check(main.s03_left_installed, "the marble arm on her marble shoulder")
+	await _shot("s03_9b_marble_arm_on")
+	await _drag_arm("right", "right")
+	_check(main.s03_right_installed and main.s03_arms_returned, "the iron arm on her rusted shoulder")
+	_check(not main.blue_lake_active, "the chalk is put away once both are on")
+	for k in range(4):
+		await _press("interact")
+		await create_timer(0.7).timeout
+		if k == 1:
+			await _shot("s03_9c_venus_peace_sign")
+	_check(not main.s03_mirror_held and main.venus_pose == 3, "four poses that are not it")
+	await _press("interact")
+	_check(main.closeup_anim == "mirror_pose", "the fifth: palms together")
+	await create_timer(1.9).timeout
+	await _shot("s03_9d_mirror_between_her_palms")
+	await create_timer(0.8).timeout
+	_check(main.s03_mirror_held, "the mirror's edge appears between her palms")
+	await _close()
+	_check(main.dialogue_label.text.contains("房间亮了"), "out of the close-up: the room is lit")
 	await _shot("s03_10_mirror_held")
 
 	# Not at the door yet: the reflection is not at the far door.
@@ -208,6 +248,57 @@ func _click() -> void:
 	click.pressed = false
 	root.push_input(click)
 	await _frames(2)
+
+## Drag an arm with LAN's chalk (mouse press on the arm, release on a shoulder) in Venus's close-up.
+func _drag_arm(arm: String, onto: String) -> void:
+	if DisplayServer.get_name() == "headless":
+		# Headless has no real pointer to push events through; drive the same two steps directly.
+		main._venus_grab(main.VENUS_ARM_REST[arm])
+		await _frames(1)
+		main._venus_drop(main.VENUS_SHOULDER[onto])
+		await _frames(2)
+		return
+	var origin: Vector2 = main.CLOSEUP_RECTS["venus"].position
+	var down := InputEventMouseButton.new()
+	down.button_index = MOUSE_BUTTON_LEFT
+	down.position = origin + main.VENUS_ARM_REST[arm]
+	down.global_position = down.position
+	down.pressed = true
+	root.push_input(down)
+	await _frames(2)
+	var up := InputEventMouseButton.new()
+	up.button_index = MOUSE_BUTTON_LEFT
+	up.position = origin + main.VENUS_SHOULDER[onto]
+	up.global_position = up.position
+	up.pressed = false
+	root.push_input(up)
+	await _frames(2)
+
+func _close() -> void:
+	await create_timer(0.35).timeout
+	await _press("interact")
+	await create_timer(0.45).timeout
+	_check(main.closeup == "", "close-up closed")
+
+func _hand_to(target: Vector2) -> void:
+	for i in range(600):
+		var d: Vector2 = target - main.closeup_hand
+		if d.length() < 5.0:
+			break
+		_hold_if("move_right", d.x > 3.0)
+		_hold_if("move_left", d.x < -3.0)
+		_hold_if("move_down", d.y > 3.0)
+		_hold_if("move_up", d.y < -3.0)
+		await process_frame
+	for a in ["move_right", "move_left", "move_down", "move_up"]:
+		Input.action_release(a)
+	await process_frame
+
+func _hold_if(action: String, on: bool) -> void:
+	if on:
+		Input.action_press(action)
+	else:
+		Input.action_release(action)
 
 func _press_e_expecting(item_name: String) -> void:
 	var nearest: Dictionary = main._get_nearest_s03_interactable()

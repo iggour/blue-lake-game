@@ -1,7 +1,10 @@
 extends SceneTree
 
-## S04 "整间展厅是一只眼睛" walkthrough with real input events (E / Space / walking), Chalk clicks
-## aimed directly when headless.
+## S04 "整间展厅是一只眼睛" walkthrough with real input events (E / Space / walking / WASD inside the
+## close-ups), Chalk clicks aimed directly.
+##   修复台 close-up: the gaze (WASD) — the signal only shows in the corner of the eye; Chalk traces it.
+##   抹核黄素 close-up: 12 drops; on the joints they make a point-light walker the visitors recognise.
+##   少女: her faces change with the story. The freeze is a hyper-real insert (the painted eye).
 ##
 ## Headless:      "$G" --headless --path . --script tests/test_s04_visitor.gd
 ## With a window: "$G" --path . --script tests/test_s04_visitor.gd   (screenshots -> .artifacts/screenshots/)
@@ -33,51 +36,78 @@ func _run() -> void:
 	_check(main.s04_window == "cone" and main.s04_win_t == 0.0, "the room starts bright (cone window)")
 	await _shot("s04_1_enter_bright")
 
-	# Space does nothing before 《窗》 has been looked at.
 	await _press_action("blue_lake")
 	await _frames(3)
 	_check(not main.blue_lake_active, "Space before looking at 《窗》 does nothing")
 
-	# Bright: the visitor can't see; the restorer only sees what is right in front of her.
+	# Bright: the visitor can't see.
 	await _press_e_at("Visitor")
-	_check(main.dialogue_label.text.contains("太亮"), "bright: the visitor says it is too bright")
-	await _press_e_at("RestorerSide")
-	_check(not main.s04_restorer_met and main.dialogue_label.text.contains("正前方"), "beside the restorer: she doesn't notice Graham")
-	await _press_e_at("Restorer")
-	_check(main.s04_restorer_met, "in front of the restorer: she talks")
-	await _drain_lines()
+	_check(main.closeup == "visitor" and main.dialogue_label.text.contains("太亮"), "bright: the visitor (a close-up) says it is too bright")
+	await _close()
 
-	# 《窗》, then Blue Lake draws the curtain.
+	# 修复台: the restorer only sees what is right in front of her.
+	await _press_e_at("Bench")
+	_check(main.closeup == "bench", "the restorer, 《星空下的神经》 and her bench are one close-up")
+	await _gaze(Vector2(430, 220))
+	await _press_action("interact")
+	_check(not main.s04_restorer_met and main.dialogue_label.text.contains("正前方"), "touching her side: she doesn't notice")
+	await _gaze(Vector2(356, 120))
+	_check(main.interaction_hint_label.text == "E 说话", "the gaze right in front of her face (%s)" % main.interaction_hint_label.text)
+	await _press_action("interact")
+	_check(main.s04_restorer_met, "in front of her: she talks")
+	await _drain_lines()
+	await _shot("s04_1b_bench_closeup")
+	await _gaze(Vector2(240, 340))
+	await _close()
+
+	# 《窗》, then LAN draws the curtain (in the hall).
 	await _press_e_at("Window")
-	_check(main.s04_window_seen, "E 《窗》: seen")
+	_check(main.s04_window_seen and main.closeup == "window", "E 《窗》: seen, close-up")
+	await _close()
 	await _press_action("blue_lake")
 	await _wait(1.4)
 	_check(main.blue_lake_active, "Space: Blue Lake (first transform in S04)")
 	await _chalk("S04Window")
 	_check(main.s04_window == "mid", "Chalk on 《窗》: half-drawn (dusk)")
 	await _wait(0.5)
-	_check(absf(main.s04_win_t - 0.5) < 0.01, "the room eases to the dusk window")
 	await _press_e_at("Visitor")
 	_check(main.dialogue_label.text.contains("眼角"), "dusk: the visitor hints at the corner of the eye")
+	await _close()
 	await _shot("s04_2_dusk")
 
-	# Peripheral vision: looking straight at the painting shows nothing, from the side the signal shows.
-	main.player.position.x = main.S04_STARRY_CENTER.x
-	await _frames(2)
-	_check(main._s04_signal_alpha() < 0.1, "straight in front of 《星空下的神经》 the signal is invisible")
-	main.player.position.x = main.S04_RESTORER_FRONT
-	await _frames(2)
-	_check(main._s04_signal_alpha() > 0.5, "from the side (in front of the restorer) the signal shows")
-	await _chalk("Signal2")
+	# Peripheral vision inside the bench close-up: the centre of the gaze sees the signal hold still.
+	await _press_e_at("Bench")
+	var node1: Vector2 = main._s04_bench_node(1)
+	await _gaze(node1)
+	_check(main._s04_bench_signal_alpha(node1) < 0.1, "looking straight at it: the signal is invisible")
+	await _gaze(node1 + Vector2(130, 0))
+	_check(main._s04_bench_signal_alpha(node1) > 0.5, "looking beside it: the signal shows")
+	await _shot("s04_2b_corner_of_the_eye")
+	_check(main.blue_lake_active and main.chalk_cursor.visible and main.chalk_cursor.z_index > main.closeup_layer.z_index, "the chalk cursor shows above the close-up")
+	main._s04_bench_chalk(main._s04_bench_node(2))
 	_check(main.s04_signal_progress == 0, "tracing out of order is refused")
 	for k in range(4):
-		await _chalk("Signal%d" % k)
-	_check(main.s04_signal_traced, "Chalk traces the signal")
+		main._s04_bench_chalk(main._s04_bench_node(k))
+		await _frames(1)
+	_check(main.s04_signal_traced, "Chalk traces the signal in the close-up")
 	_check(main.s04_starry_repaired and main.s04_has_riboflavin, "at dusk the restorer repairs it and hands over riboflavin")
 	await _shot("s04_3_traced")
 	await _drain_lines()
+	await _gaze(Vector2(240, 340))
+	await _close()
 
-	# The girl: she walks only while it is not bright. Freeze her in the wrong place first.
+	# The girl's faces (after the repair she knows what you are here for).
+	await _press_e_at("PearlHeadphones")
+	_check(main.closeup == "girl", "the girl's close-up")
+	for k in range(3):
+		await _press_action("interact")
+		await _wait(0.45)
+		if k == 1:
+			await _shot("s04_3b_girl_eyeroll")
+	_check(main.s04_girl_face == 2 and main.chapter_state.has_event(&"s04_girl_face_eyeroll"), "three faces after the repair")
+	await _close()
+
+	# The girl walks only while it is not bright. Freeze her in the wrong place first.
 	await _chalk("S04Window")
 	_check(main.s04_window == "rod", "Chalk again: closed (dark)")
 	await _frames(3)
@@ -85,11 +115,18 @@ func _run() -> void:
 	var x0: float = main.s04_girl_x
 	await _wait(0.5)
 	_check(main.s04_girl_x != x0, "she moves in the dark")
-	await _shot("s04_4_dark_girl")
+	await _press_e_at("PearlHeadphones")
+	_check(main.dialogue_label.text.contains("空") or main.closeup == "girl", "her frame is empty")
+	await _press_action("interact")
+	_check(main.dialogue_label.text.contains("偷笑"), "an empty chair and yellow footprints; someone giggles")
+	await _shot("s04_4_empty_frame")
+	await _close()
 	main.s04_girl_x = 650.0
 	await _chalk("S04Window")
 	_check(main.s04_girl_frozen and not main.s04_girl_caught, "bright too far from the restorer: frozen, not caught")
-	await _shot("s04_5_frozen_wrong_place")
+	_check(main._s01_hyper_now().size() == 2 and main._s01_hyper_now()[0] == "painted_eye", "the freeze cuts to a hyper-real painted eye")
+	await _shot("s04_5_hyperreal_painted_eye")
+	await _wait(1.0)
 	var xf: float = main.s04_girl_x
 	await _wait(0.3)
 	_check(main.s04_girl_x == xf, "frozen while bright")
@@ -101,45 +138,85 @@ func _run() -> void:
 	await _shot("s04_6_caught")
 	await _drain_lines()
 	_check(not main.s04_girl_out, "she goes back into her frame")
+	await _press_e_at("PearlHeadphones")
+	await _press_action("interact")
+	await _wait(0.45)
+	await _press_action("interact")
+	_check(main.dialogue_label.text.contains("好久不见"), "caught: she cries, then sees LAN")
+	await _shot("s04_6b_girl_sees_lan")
+	await _wait(0.45)
+	await _press_action("interact")
+	_check(main.dialogue_label.text.contains("嘘"), "and asks you not to tell")
+	await _wait(0.45)
+	await _close()
 
-	# Riboflavin on Graham, ultraviolet on.
+	# Riboflavin: Graham dabs it on herself. On the joints it moves the way she walks.
 	await _press_action("blue_lake")
 	await _frames(2)
 	_check(not main.blue_lake_active, "Space: Blue Lake put away")
-	await _press_e_at("Workbench")
-	_check(main.s04_riboflavin_applied, "E bench: riboflavin applied")
-	await _press_e_at("Workbench")
-	_check(main.s04_uv_on, "E bench: ultraviolet on")
+	await _press_e_at("Bench")
+	await _gaze(Vector2(500, 286))
+	_check(main.interaction_hint_label.text == "E 拿起核黄素", "the bottle on the bench (%s)" % main.interaction_hint_label.text)
+	await _press_action("interact")
+	_check(main.closeup == "smear", "the riboflavin close-up: Graham's front")
+	await _wait(0.4)
+	for k in range(10):
+		main.closeup_hand = main.S04_JOINTS[k]
+		await _press_action("interact")
+	main.closeup_hand = Vector2(180, 180)
+	await _press_action("interact")
+	await _shot("s04_6c_dabs")
+	main.closeup_hand = Vector2(170, 60)
+	await _press_action("interact")
+	_check(main.s04_riboflavin_applied and main._s04_joint_hits() == 10, "twelve drops, ten on joints (%d)" % main._s04_joint_hits())
+	await _wait(0.5)
+	_check(main.closeup == "", "the close-up closes after the last drop")
+	await _press_e_at("Bench")
+	await _gaze(Vector2(556, 290))
+	await _press_action("interact")
+	_check(main.s04_uv_on, "the ultraviolet lamp on")
+	await _frames(3)
+	_check(main.chapter_state.has_story_event(&"hyperreal_fluor"), "a hyper-real insert: riboflavin glowing on skin")
+	await _shot("s04_6d_hyperreal_fluor")
+	await _wait(1.0)
+	await _gaze(Vector2(240, 340))
+	await _close()
 	await _press_e_at("Window")
-	_check(main.chapter_state.has_event(&"s04_blue_handprint_seen"), "bright + UV: E 《窗》 shows the blue handprint in the blind spot")
+	_check(main.chapter_state.has_event(&"s04_blue_handprint_seen") and main.dialogue_label.text.contains("那是我的"), "bright + UV: LAN's blue handprint in the blind spot")
+	await _shot("s04_6e_window_uv")
+	await _wait(0.4)
+	_check(main.interaction_hint_label.text == "E 装上画框", "then the frame (%s)" % main.interaction_hint_label.text)
+	await _press_action("interact")
+	_check(main.s04_frame_installed, "E in 《窗》's close-up: frame installed")
+	await _close()
 	await _press_action("blue_lake")
 	await _frames(2)
 	await _chalk("S04Window")   # mid
 	await _chalk("S04Window")   # rod
 	await _press_action("blue_lake")
 	await _wait(0.6)
-	_check(main.s04_win_t > 0.9, "dark again")
+	_check(main.s04_win_t > 0.9 and main._s04_point_light_on(), "dark + UV: Graham is a point-light walker")
 
 	# The visitors see only movement: standing still in front of them does nothing.
 	await _press_e_at("VisitorGroup")
 	_check(not main.s04_visitors_recognized and main.dialogue_label.text.contains("停下来"), "standing still: not recognised")
+	await _close()
 	main.player.position.x = 880.0
 	Input.action_press("move_right")
 	await _wait(0.4)
+	await _shot("s04_7_point_light_walker")
 	Input.action_release("move_right")
 	await _frames(2)
-	_check(main.s04_visitors_recognized, "walking past them, glowing: recognised by her gait")
-	await _shot("s04_7_recognised")
+	_check(main.s04_visitors_recognized, "walking past them, the joints glowing: recognised by her gait")
 	await _drain_lines()
 
 	# 《窗》 under ultraviolet: the painted-out handle; then the frame goes back on.
 	await _press_e_at("Window")
-	_check(main.s04_handle_found, "E 《窗》 under UV: the handle she painted out")
-	await _press_e_at("Window")
-	_check(main.s04_frame_installed, "E 《窗》: frame installed")
+	_check(main.s04_handle_found and main.closeup == "window", "E 《窗》 under UV: the handle she painted out")
 	await _shot("s04_8_frame_handle")
 	await _wait(S04_wait())
 	_check(main.s05_active, "S04 completes -> S05")
+	_check(main.closeup == "" and main.player.modulate.a == 1.0, "leaving S04 puts the close-up away and Graham back to normal")
 	_check(main.chapter_state.is_slice_completed(ChapterState.Slice.S04_VISITOR), "S04 marked complete")
 
 	if failures.is_empty():
@@ -158,6 +235,34 @@ func _chalk(target: String) -> void:
 	main.chalk_hover_target = target
 	main._try_s04_chalk_interaction()
 	await _frames(2)
+
+## Move the gaze (or the brush) in a big close-up with WASD.
+func _gaze(target: Vector2) -> void:
+	for i in range(600):
+		var d: Vector2 = target - main.closeup_hand
+		if d.length() < 5.0:
+			break
+		_hold_if("move_right", d.x > 3.0)
+		_hold_if("move_left", d.x < -3.0)
+		_hold_if("move_down", d.y > 3.0)
+		_hold_if("move_up", d.y < -3.0)
+		await process_frame
+	for a in ["move_right", "move_left", "move_down", "move_up"]:
+		Input.action_release(a)
+	await _frames(2)
+
+func _hold_if(action: String, on: bool) -> void:
+	if on:
+		Input.action_press(action)
+	else:
+		Input.action_release(action)
+
+func _close() -> void:
+	await _wait(0.35)
+	await _drain_lines()
+	await _press_action("interact")
+	await _wait(0.45)
+	_check(main.closeup == "", "close-up closed (%s)" % main.closeup)
 
 func _drain_lines() -> void:
 	var guard := 0
@@ -199,12 +304,12 @@ func _frames(count: int) -> void:
 	for i in range(count):
 		await process_frame
 
-func _wait(seconds: float) -> void:
-	await create_timer(seconds).timeout
+func _wait(t: float) -> void:
+	await create_timer(t).timeout
 
 func _shot(shot_name: String) -> void:
 	if DisplayServer.get_name() == "headless":
 		return
-	await _frames(3)
+	await process_frame
 	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(SHOT_DIR))
 	root.get_texture().get_image().save_png(SHOT_DIR + "/" + shot_name + ".png")

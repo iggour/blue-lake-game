@@ -80,16 +80,26 @@ func _run() -> void:
 	await _close()
 	await _shot("s01_f3_rusted_open")
 
-	# 《这不是一只眼睛》 up close: no hint, but Graham in its cornea; the third look pulls its eyelid shut.
+	# 《这不是一只眼睛》 up close: no hint, but Graham in its cornea. W leans in: the pupil grows, the
+	# reflection grows, and right up close the eyelid shows; E pulls it down.
 	await _walk_to_x(910.0)
 	await _press_e_expecting("NotAnEye")
 	_check(main.closeup == "eye", "the eye's close-up")
-	await _close()
-	await _press_e_expecting("NotAnEye")
 	await _seconds(0.4)
 	await _shot("s01_f4_eye_fisheye")
-	await _close()
-	await _press_e_expecting("NotAnEye")
+	_check(main.interaction_hint_label.text.contains("W/S"), "W/S to lean in (%s)" % main.interaction_hint_label.text)
+	Input.action_press("move_up")
+	for k in range(80):
+		await _seconds(0.05)
+		if main.s01_eye_zoom >= 0.99:
+			break
+	Input.action_release("move_up")
+	await _frames(2)
+	_check(main.s01_eyelid_seen and _says("眼皮"), "right up close the eyelid shows")
+	_check(main.interaction_hint_label.text == "E 拉下眼皮", "E pulls it (%s)" % main.interaction_hint_label.text)
+	_check(main.player.position.x > 900.0 and main.player.position.x < 920.0, "leaning in does not walk Graham")
+	await _shot("s01_f4b_eye_leaning_in")
+	await _press("interact")
 	_check(main.closeup_anim == "eyelid", "the third look pulls the eyelid down inside the close-up")
 	await _seconds(0.7)
 	_check(main._s01_hyper_now().size() == 2, "the eyelid is a hyper-real insert")
@@ -101,6 +111,7 @@ func _run() -> void:
 	await _seconds(4.0)
 	_check(not main.s01_eyelid_closed and not main.player.input_locked, "it opens again")
 	_check(main.chapter_state.has_story_event(&"s01_easter_eyelid"), "easter egg recorded")
+	_check(main.achievements_unlocked.has("ACH_S01_CLOSE_THE_EYE"), "a platform achievement is recorded (no in-game pop-up)")
 
 	await _walk_to_x(200.0)
 	_check(main.s01_face_noticed and _says("这面墙在看我们"), "from the far left the wall reads as a face")
@@ -131,7 +142,7 @@ func _close() -> void:
 
 func _hand_to(target: Vector2) -> void:
 	for i in range(600):
-		var d: Vector2 = target - main.s01_photo_hand
+		var d: Vector2 = target - main.closeup_hand
 		if d.length() < 5.0:
 			break
 		_hold_if("move_right", d.x > 3.0)

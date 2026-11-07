@@ -110,16 +110,23 @@ func _run() -> void:
 	_check(_says("开幕日") and _says("小女孩"), "the opening-day photo, with the girl")
 	await _seconds(0.4)
 	await _shot("s01_6_photo_opening_day")
+	# A small puzzle inside the photo: no ribbon yet. The girl only stares at the guard's scissors.
+	await _hand_to(Vector2(205, 312))
+	await _press("interact")
+	_check(_says("大剪刀") and main.closeup_anim == "" and not main.s01_has_chalk, "the girl keeps her chalk and stares at the scissors")
 	await _hand_to(Vector2(320, 300))
 	await _press("interact")
-	await _seconds(1.2)
-	_check(main.s01_ribbon_cut, "the guard cuts the ribbon")
+	_check(_says("等着剪") and not main.s01_ribbon_cut, "the guard has nothing to cut yet")
 	await _hand_to(Vector2(70, 300))
 	await _press("interact")
 	await _seconds(0.9)
-	await _shot("s01_6b_restorer_turns")
+	await _shot("s01_6b_restorer_paints_the_ribbon")
 	await _seconds(0.7)
-	_check(main.s01_restorer_dab and _says("颜料"), "the restorer touches up the photo's glass")
+	_check(main.s01_restorer_dab and _says("彩带") and _says("颜料"), "the restorer paints the ribbon")
+	await _hand_to(Vector2(320, 300))
+	await _press("interact")
+	await _seconds(1.2)
+	_check(main.s01_ribbon_cut, "now the guard cuts it")
 	await _hand_to(Vector2(424, 300))
 	await _press("interact")
 	await _seconds(1.1)
@@ -132,11 +139,13 @@ func _run() -> void:
 	_check(main.s01_cleaner_waved, "the cleaner grows over the roof and back")
 	await _hand_to(Vector2(205, 312))
 	await _press("interact")
-	_check(main.closeup_anim == "chalk" and not main.s01_has_chalk, "her arm comes out of the photo")
+	_check(main.closeup_anim == "chalk" and not main.s01_has_chalk, "she plays with the cut ribbon, then her arm comes out of the photo")
+	await _seconds(0.4)
+	await _shot("s01_6d_girl_twirls_the_ribbon")
 	await _seconds(1.0)
 	_check(main._s01_hyper_now().size() == 2, "a hyper-real insert cuts in (the real hand)")
 	await _shot("s01_7_hyperreal_hand")
-	await _seconds(1.2)
+	await _seconds(1.4)
 	_check(main.s01_has_chalk and _says("粉笔"), "Graham has the chalk")
 	_check(main.closeup == "photo", "the close-up stays open after the chalk")
 	await _close_photo()
@@ -217,7 +226,7 @@ func _close() -> void:
 ## Moves Graham's hand over the photo (its own space) with WASD.
 func _hand_to(target: Vector2) -> void:
 	for i in range(600):
-		var d: Vector2 = target - main.s01_photo_hand
+		var d: Vector2 = target - main.closeup_hand
 		if d.length() < 5.0:
 			break
 		_hold_if("move_right", d.x > 3.0)

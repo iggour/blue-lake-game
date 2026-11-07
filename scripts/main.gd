@@ -45,15 +45,27 @@ const S01_MAZE_ROOM_AREA := Rect2(283, 257, 54, 30)   # the grid on the small ma
 const S01_MAZE_BIG_AREA := Rect2(95, 100, 504, 216)   # the grid in the map's close-up (its own space)
 # Close-ups (特写): where each one sits on screen; its content is drawn in a space of that size.
 const CLOSEUP_RECTS := {
-	"photo": Rect2(316, 85, 520, 380),
-	"map": Rect2(226, 85, 700, 380),
+	"photo": Rect2(316, 88, 520, 380),
+	"map": Rect2(226, 88, 700, 380),
 	"clocks": Rect2(296, 105, 560, 340),
-	"door": Rect2(406, 85, 340, 380),
-	"eye": Rect2(356, 95, 440, 360)
+	"door": Rect2(406, 88, 340, 380),
+	"eye": Rect2(356, 95, 440, 360),
+	"guard": Rect2(356, 90, 440, 380),
+	"narcissus": Rect2(276, 88, 600, 390),
+	"venus": Rect2(316, 88, 520, 400),
+	"lan": Rect2(366, 110, 420, 300),
+	"bench": Rect2(276, 88, 600, 390),
+	"smear": Rect2(396, 84, 360, 404),
+	"girl": Rect2(396, 88, 360, 400),
+	"window": Rect2(366, 88, 420, 400),
+	"visitor": Rect2(426, 90, 300, 380),
+	"twins": Rect2(386, 110, 380, 340),
+	"swap": Rect2(406, 88, 360, 400)
 }
 const CLOSEUP_OPEN_TIME := 0.28
 const CLOSEUP_ANIM_TIME := {
-	"chalk": 2.0, "key": 2.2, "door": 2.2, "turn": 0.9, "splat": 0.9, "eyelid": 1.6,
+	"chalk": 2.4, "key": 2.2, "door": 2.2, "turn": 0.9, "splat": 0.9, "eyelid": 1.6,
+	"glove": 2.0, "ripple": 1.4, "pose": 0.6, "mirror_pose": 2.4, "face": 0.4, "swap": 1.6,
 	"snip": 1.0, "dab": 1.4, "heads": 0.9, "giant": 2.0, "lamp": 1.4, "shovel": 1.2, "pages": 1.6
 }
 const S01_HAND_SPEED := 260.0                  # Graham's hand over the photo (its own space)
@@ -203,16 +215,33 @@ var s01_has_key := false              # drawn on the map with the chalk, lifted 
 var s01_maze_path: Array[Vector2i] = []   # the chalk line on the map, from "你在这里" to the red dot
 var s01_maze_adj := {}                # Vector2i -> Array of the grooves' neighbours
 var s01_exit_route := ""              # "past" (the key) or "future" (rusted through)
-var s01_photo_hand := Vector2(380, 352)   # Graham's hand over the photo, in the photo's own space
+var closeup_hand := Vector2(380, 352)   # Graham's hand over the photo, in the photo's own space
 # What touching the people in the photo has changed (each shows somewhere else too):
 var s01_ribbon_cut := false           # the guard cut the ribbon: a stub stays tied to the door in later eras
-var s01_restorer_dab := false         # the restorer's stroke on the photo's glass, and on 《观看的永恒》's frame
+var s01_restorer_dab := false         # the restorer painted the ribbon (fresh red paint on 《观看的永恒》's frame too)
 var s01_visitors_turned := false      # the visitors look out of the photo, faceless
 var s01_cleaner_waved := false        # the cleaner grew over the roof: broom marks on the map's corner
 var s01_lamp_fixed := false           # Graham fixed the lamp in winter: the hall's 出口 sign stops humming
 var s01_snow_out := false             # a shovelful of snow flew out of the photo onto the hall's floor
 var s01_book_open := false            # the blue book leafed through itself: a small handprint
-var hyper_textures := {}              # procedural placeholder textures for the hyper-real inserts
+var hyper_textures := {}
+var closeup_xf := Transform2D.IDENTITY    # the close-up's current transform while it draws
+var s01_eye_zoom := 0.0               # in 《这不是一只眼睛》's close-up: 0 standing back .. 1 right up close (W/S)
+var s01_eyelid_seen := false
+var achievements_unlocked: Array[String] = []   # platform achievements (Steam etc.), no in-game pop-up
+var venus_drag := ""                  # "left"/"right": the arm LAN's chalk is dragging in Venus's close-up
+var venus_pose := -1                  # index into VENUS_POSES once both arms are on
+var venus_pose_prev := -1
+var s02_ripple_left := 0.0            # seconds the real water under 《那喀索斯》 keeps rippling
+var s03_mirror_line_pending := false
+var s04_dabs: Array[Vector2] = []     # riboflavin on Graham, in the riboflavin close-up's space
+var s04_girl_face := -1               # which of her faces 《戴珍珠耳机的少女》 is pulling
+var s04_walk_phase := 0.0             # Graham's gait, for the point-light walker
+var s04_firefly_said := false
+var s04_fluor_shown := false
+var s04_freeze_flash_done := false
+var hyper_flash := ""                 # a hyper-real insert that cuts in over the hall itself
+var hyper_flash_left := 0.0              # procedural placeholder textures for the hyper-real inserts
 var s01_clocks_seen := false
 var s01_face_noticed := false
 var s01_idle_time := 0.0
@@ -507,10 +536,9 @@ func _build_gallery() -> void:
 		# Their 里 counterparts hang or stand at the mirrored x on the right.
 		{"name":"HallDoor", "position":Vector2(118,440), "radius":30.0, "hint_y":376.0},
 		{"name":"SecurityGuard", "position":Vector2(S02_GUARD_X,440), "radius":45.0, "hint_y":258.0},
-		{"name":"PictureLamp", "position":Vector2(S03_PICTURE_LAMP.x,440), "radius":20.0, "hint_y":376.0},
-		{"name":"Narcissus", "position":Vector2(330,440), "radius":50.0, "hint_y":376.0},
-		{"name":"SculptureLight", "position":Vector2(500,440), "radius":24.0, "hint_y":398.0},
-		{"name":"SculptureVenus", "position":Vector2(S02_AXIS_X,440), "radius":30.0, "hint_y":398.0}
+		# 《那喀索斯》 and its picture lamp are one close-up; so are 《机械维纳斯》 and 《光》 above her.
+		{"name":"Narcissus", "position":Vector2(315,440), "radius":65.0, "hint_y":376.0},
+		{"name":"SculptureVenus", "position":Vector2(528,440), "radius":50.0, "hint_y":398.0}
 	]
 	# S03 happens in the same hall as S02; the dead-end mirror is now the puzzle.
 	# S03 happens in the same 表与里 hall as S02, with the same pieces.
@@ -518,10 +546,8 @@ func _build_gallery() -> void:
 	s04_interactables = [
 		# Left to right. The restorer is reached only from right in front of her (between her and the painting).
 		{"name":"Visitor", "position":Vector2(170,440), "radius":40.0, "hint_y":258.0},
-		{"name":"StarryNerves", "position":Vector2(S04_STARRY_CENTER.x,440), "radius":38.0, "hint_y":376.0},
-		{"name":"Restorer", "position":Vector2(S04_RESTORER_FRONT,440), "radius":16.0, "hint_y":258.0},
-		{"name":"RestorerSide", "position":Vector2(S04_RESTORER_X + 7.0,440), "radius":14.0, "hint_y":258.0},
-		{"name":"Workbench", "position":Vector2(S04_BENCH_X,440), "radius":22.0, "hint_y":398.0},
+		# 《星空下的神经》, the restorer and her workbench are one close-up: 修复台.
+		{"name":"Bench", "position":Vector2(430,440), "radius":95.0, "hint_y":376.0},
 		{"name":"Window", "position":Vector2(590,440), "radius":30.0, "hint_y":376.0},
 		{"name":"PearlHeadphones", "position":Vector2(S04_GIRL_FRAME_X,440), "radius":40.0, "hint_y":376.0},
 		{"name":"SculptureTwins", "position":Vector2(S04_TWINS_X,440), "radius":28.0, "hint_y":398.0},
@@ -684,9 +710,10 @@ func _draw_s01_photo() -> void:
 		draw_string(ThemeDB.fallback_font, inner.position + Vector2(4, 12), "OPENING", HORIZONTAL_ALIGNMENT_LEFT, -1, 9, Color(0.35, 0.2, 0.1, 0.8))
 		# Cutting the ribbon in front of the red house.
 		if s01_ribbon_cut:
-			draw_line(Vector2(inner.position.x + 8, door.position.y + 20), Vector2(door.get_center().x - 2, door.position.y + 26), Color("#d8202a"), 2.0)
+			if not s01_has_chalk:
+				draw_line(Vector2(inner.position.x + 8, door.position.y + 20), Vector2(door.get_center().x - 2, door.position.y + 26), Color("#d8202a"), 2.0)
 			draw_line(Vector2(inner.end.x - 8, door.position.y + 20), Vector2(door.get_center().x + 2, door.position.y + 26), Color("#d8202a"), 2.0)
-		else:
+		elif s01_restorer_dab:
 			draw_line(Vector2(inner.position.x + 8, door.position.y + 20), Vector2(inner.end.x - 8, door.position.y + 20), Color("#d8202a"), 2.0)
 			draw_circle(Vector2(door.get_center().x, door.position.y + 20), 3.0, Color("#d8202a"))
 		# Blue Lake was already here, years ago, in another form: a small girl with blue eyes in the crowd.
@@ -717,9 +744,6 @@ func _draw_s01_photo() -> void:
 			draw_rect(Rect2(Vector2(inner.position.x + 26.0, floor_y - 3.0), Vector2(8, 3)), Color("#f4f6f8"), true)
 	if s01_ribbon_cut and s01_era > 0:
 		draw_line(door.end - Vector2(4, 18), door.end - Vector2(3, 10), Color("#b2433a"), 1.5)
-	# The restorer's stroke is on the glass, whatever era the photo shows.
-	if s01_restorer_dab:
-		draw_line(inner.position + Vector2(10, 22), inner.position + Vector2(30, 18), Color(0.12, 0.42, 0.72, 0.85), 2.0)
 	draw_string(ThemeDB.fallback_font, Vector2(r.position.x + 2, 340), "《美术馆开幕日》", HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color("#e8dfc8"))
 
 ## Blue Lake hides in every chapter as something white-and-blue that can become something else.
@@ -801,7 +825,7 @@ func _draw_s01_clocks() -> void:
 		draw_circle(Vector2.ZERO, 14.0 + s01_melt * 7.0, Color("#e2dccb"))
 		draw_set_transform(Vector2.ZERO)
 	if s01_restorer_dab:
-		draw_line(r.position + Vector2(4, r.size.y - 4), r.position + Vector2(26, r.size.y - 7), Color(0.12, 0.42, 0.72, 0.9), 3.0)
+		draw_line(r.position + Vector2(4, r.size.y - 4), r.position + Vector2(26, r.size.y - 7), Color(0.85, 0.13, 0.16, 0.95), 3.0)
 	draw_string(ThemeDB.fallback_font, Vector2(r.position.x + 44, 318), "《观看的永恒》", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color("#e8dfc8"))
 
 func _s01_left_turns(era: int) -> int:
@@ -973,15 +997,18 @@ func _s01_draw_map_on(ci: CanvasItem, area: Rect2, big: bool) -> void:
 ## Drawn on its own layer above Graham. The content of each close-up is drawn in its own space
 ## (0..size), and that space is scaled from where the thing hangs to the middle of the screen.
 func _draw_closeup() -> void:
-	if closeup == "":
-		return
 	var cv: CanvasItem = closeup_layer
+	_draw_point_light(cv)
+	if closeup == "":
+		_draw_hyperreal(cv)
+		return
 	var e := closeup_t * closeup_t * (3.0 - 2.0 * closeup_t)
 	cv.draw_rect(Rect2(0, 58, 1152, 590), Color(0.02, 0.03, 0.05, 0.8 * e), true)
 	var kind := _closeup_kind()
 	var target: Rect2 = CLOSEUP_RECTS[kind]
 	var cur := Rect2(closeup_from.position.lerp(target.position, e), closeup_from.size.lerp(target.size, e))
-	cv.draw_set_transform(cur.position, 0.0, cur.size / target.size)
+	closeup_xf = Transform2D(0.0, cur.size / target.size, 0.0, cur.position)
+	cv.draw_set_transform_matrix(closeup_xf)
 	var sz := target.size
 	match kind:
 		"photo":
@@ -994,6 +1021,28 @@ func _draw_closeup() -> void:
 			_draw_closeup_door(cv, sz)
 		"eye":
 			_draw_closeup_eye(cv, sz)
+		"guard":
+			_draw_closeup_guard(cv, sz)
+		"narcissus":
+			_draw_closeup_narcissus(cv, sz)
+		"venus":
+			_draw_closeup_venus(cv, sz)
+		"lan":
+			_draw_closeup_lan(cv, sz)
+		"bench":
+			_draw_closeup_bench(cv, sz)
+		"smear":
+			_draw_closeup_smear(cv, sz)
+		"girl":
+			_draw_closeup_s04_girl(cv, sz)
+		"window":
+			_draw_closeup_window(cv, sz)
+		"visitor":
+			_draw_closeup_visitor(cv, sz)
+		"twins":
+			_draw_closeup_twins(cv, sz)
+		"swap":
+			_draw_closeup_swap(cv, sz)
 	cv.draw_set_transform(Vector2.ZERO)
 	_draw_hyperreal(cv)
 
@@ -1008,7 +1057,7 @@ func _cv_figure(cv: CanvasItem, head: Vector2, body: Color, k: float, facing_out
 		cv.draw_arc(head + Vector2(0, -0.4 * k), 3.0 * k, PI * 0.9, PI * 2.1, 10, Color("#5b4a3a"), 1.6 * k)
 
 func _s01_highlight(cv: CanvasItem, id: String) -> void:
-	if closeup_anim != "" or _s01_photo_spot_at(s01_photo_hand) != id:
+	if closeup_anim != "" or _s01_photo_spot_at(closeup_hand) != id:
 		return
 	for spot in _s01_photo_spots():
 		if spot.id == id:
@@ -1053,26 +1102,30 @@ func _draw_closeup_photo(cv: CanvasItem, sz: Vector2) -> void:
 			_draw_closeup_photo_winter(cv, ground_y, inner, t)
 		_:
 			_draw_closeup_photo_later(cv, ground_y, inner, door, t)
-	# The restorer's stroke is on the glass, so it stays whatever era the photo shows.
-	if s01_restorer_dab or (closeup_anim == "dab" and t > 0.55):
-		cv.draw_polyline(PackedVector2Array([Vector2(96, 196), Vector2(124, 186), Vector2(150, 194), Vector2(168, 184)]), Color(0.12, 0.42, 0.72, 0.85), 6.0)
-		cv.draw_circle(Vector2(170, 184), 3.5, Color(0.12, 0.42, 0.72, 0.85))
 	_draw_closeup_hand(cv)
 	cv.draw_string(font, Vector2(sz.x * 0.5 - 70, -10), "《美术馆开幕日》", HORIZONTAL_ALIGNMENT_LEFT, -1, 20, Color("#e8dfc8"))
 
 func _draw_closeup_photo_opening(cv: CanvasItem, ground_y: float, t: float) -> void:
 	var font := ThemeDB.fallback_font
 	cv.draw_string(font, Vector2(28, 40), "OPENING", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color(0.35, 0.2, 0.1, 0.8))
-	# The ribbon across the door; the guard's big scissors cut it.
+	# No ribbon at first: the restorer paints it across the door, the guard's big scissors cut it,
+	# and the girl (LAN) plays with what is left.
 	var cut := s01_ribbon_cut or (closeup_anim == "snip" and t > 0.45)
 	var red := Color("#d8202a")
+	var reach := 0.0
+	if s01_restorer_dab:
+		reach = 1.0
+	elif closeup_anim == "dab":
+		reach = clampf((t - 0.25) / 0.6, 0.0, 1.0)
 	if cut:
 		var fall := 1.0 if s01_ribbon_cut else clampf((t - 0.45) / 0.4, 0.0, 1.0)
-		cv.draw_line(Vector2(110, 296), Vector2(254, 296 + 30 * fall), red, 4.0)
+		if not s01_has_chalk and not (closeup_anim == "chalk"):
+			cv.draw_line(Vector2(110, 296), Vector2(254, 296 + 30 * fall), red, 4.0)
 		cv.draw_line(Vector2(410, 296), Vector2(266, 296 + 30 * fall), red, 4.0)
-	else:
-		cv.draw_line(Vector2(110, 296), Vector2(410, 296), red, 4.0)
-		cv.draw_circle(Vector2(260, 296), 7.0, red)
+	elif reach > 0.0:
+		cv.draw_line(Vector2(110, 296), Vector2(110 + 300.0 * reach, 296), red, 4.0)
+		if reach >= 1.0:
+			cv.draw_circle(Vector2(260, 296), 7.0, red)
 	var turned := s01_visitors_turned or (closeup_anim == "heads" and t > 0.5)
 	# The guard, with the big scissors.
 	_cv_figure(cv, Vector2(320, ground_y - 50), Color("#566b7a"), 3.6)
@@ -1086,12 +1139,16 @@ func _draw_closeup_photo_opening(cv: CanvasItem, ground_y: float, t: float) -> v
 		cv.draw_line(pivot + Vector2(28, 0).rotated(sgn * open_a), pivot - Vector2(18, 0).rotated(sgn * open_a), Color("#9aa3a8"), 3.0)
 	cv.draw_circle(pivot - Vector2(20, 0), 3.0, Color("#3b3f46"))
 	_s01_highlight(cv, "guard")
-	# The restorer, brush in hand; she turns round and touches up the photo's glass.
+	# The restorer, brush in hand; touched, she paints the ribbon across the door.
 	var dab_k := 0.0
 	if closeup_anim == "dab":
 		dab_k = sin(clampf(t, 0.0, 1.0) * PI)
 	_cv_figure(cv, Vector2(70, ground_y - 50), Color("#b26b5e"), 3.6, dab_k > 0.2)
-	cv.draw_line(Vector2(84, 300), Vector2(96, 282).lerp(Vector2(110, 200), dab_k), Color("#7a5a3a"), 2.0 + 2.0 * dab_k)
+	var brush := Vector2(96, 282)
+	if closeup_anim == "dab" and reach > 0.0 and reach < 1.0:
+		brush = Vector2(110 + 300.0 * reach, 292)
+	cv.draw_line(Vector2(84, 300), brush, Color("#7a5a3a"), 2.0 + 2.0 * dab_k)
+	cv.draw_circle(brush, 3.0, red if (closeup_anim == "dab" or s01_restorer_dab) else Color("#7a5a3a"))
 	_s01_highlight(cv, "restorer")
 	# The visitors look at the door; touched, they all turn to look out of the photo, faceless.
 	_cv_figure(cv, Vector2(112, ground_y - 50), Color("#6c8290"), 3.6, turned)
@@ -1167,7 +1224,7 @@ func _draw_closeup_photo_winter(cv: CanvasItem, ground_y: float, inner: Rect2, t
 	cv.draw_circle(bear + Vector2(-9, -26), 4.0, Color("#f4f6f8"))
 	cv.draw_circle(bear + Vector2(9, -26), 4.0, Color("#f4f6f8"))
 	cv.draw_circle(bear + Vector2(0, 0), 13.0, Color("#f4f6f8"))
-	var look := (s01_photo_hand - (bear + Vector2(0, -18))).normalized() * 1.5
+	var look := (closeup_hand - (bear + Vector2(0, -18))).normalized() * 1.5
 	cv.draw_rect(Rect2(bear + Vector2(-6, -19) + look, Vector2(3.5, 3.5)), Color("#2f86e0"), true)
 	cv.draw_rect(Rect2(bear + Vector2(3, -19) + look, Vector2(3.5, 3.5)), Color("#2f86e0"), true)
 	_s01_highlight(cv, "bear")
@@ -1242,8 +1299,15 @@ func _draw_closeup_girl(cv: CanvasItem, head: Vector2) -> void:
 	if s01_has_chalk:
 		hand = shoulder + Vector2(4, 18)
 	elif closeup == "photo" and closeup_anim == "chalk":
-		# Out of the photo and down past its frame, toward Graham's hand.
-		var t := closeup_anim_t
+		# First she twirls the cut ribbon; then her arm comes out of the photo, down past its frame.
+		if closeup_anim_t < 0.35:
+			var spin := closeup_anim_t / 0.35 * TAU * 2.0
+			var loop := PackedVector2Array()
+			for i in range(17):
+				var a := spin + i * 0.35
+				loop.append(head + Vector2(cos(a) * (20.0 + i), 14.0 + sin(a) * (10.0 + i * 0.6)))
+			cv.draw_polyline(loop, Color("#d8202a"), 3.0)
+		var t := clampf((closeup_anim_t - 0.3) / 0.7, 0.0, 1.0)
 		var raised := shoulder + Vector2(16, -14)
 		var out := Vector2(310, 420)
 		hand = raised.lerp(out, t * t * (3.0 - 2.0 * t)) + Vector2(0, -40.0 * sin(t * PI))
@@ -1258,13 +1322,13 @@ func _draw_closeup_girl(cv: CanvasItem, head: Vector2) -> void:
 		cv.draw_rect(Rect2(hand + Vector2(-2, -7), Vector2(4, 11)), Color(1, 1, 1, fade), true)
 
 ## Graham's hand over the photo (big close-up): her sleeve comes in from the bottom edge.
-func _draw_closeup_hand(cv: CanvasItem) -> void:
+func _draw_closeup_hand(cv: CanvasItem, bottom: float = 460.0) -> void:
 	if closeup_anim == "chalk":
 		return
-	var h := s01_photo_hand
+	var h := closeup_hand
 	var sleeve := Color("#4b79a8")
 	var skin := Color("#f2c6a0")
-	cv.draw_colored_polygon(PackedVector2Array([h + Vector2(-9, 14), h + Vector2(9, 14), h + Vector2(16, 460 - h.y), h + Vector2(-16, 460 - h.y)]), Color(sleeve, 0.9))
+	cv.draw_colored_polygon(PackedVector2Array([h + Vector2(-9, 14), h + Vector2(9, 14), h + Vector2(16, bottom - h.y), h + Vector2(-16, bottom - h.y)]), Color(sleeve, 0.9))
 	cv.draw_circle(h + Vector2(0, 6), 9.0, skin)
 	cv.draw_line(h + Vector2(-2, 2), h + Vector2(-1, -10), skin, 4.0)
 	for f in [Vector2(-7, 0), Vector2(5, -2), Vector2(9, 4)]:
@@ -1343,9 +1407,9 @@ func _draw_closeup_clocks(cv: CanvasItem, sz: Vector2) -> void:
 	var right_melt := lerpf(float(from_melt), float(s01_melt), w)
 	_draw_closeup_clock_eye(cv, Vector2(160, 170), left_a, 0.0, weights[1])
 	_draw_closeup_clock_eye(cv, Vector2(400, 170), right_a, right_melt, weights[1])
-	# The restorer's fresh stroke, on this frame too (she touched up the photo).
+	# A fresh stroke of the ribbon's red paint on this frame too (the restorer painted the ribbon).
 	if s01_restorer_dab:
-		cv.draw_polyline(PackedVector2Array([Vector2(20, 330), Vector2(60, 318), Vector2(96, 326)]), Color(0.12, 0.42, 0.72, 0.9), 5.0)
+		cv.draw_polyline(PackedVector2Array([Vector2(20, 330), Vector2(60, 318), Vector2(96, 326)]), Color(0.85, 0.13, 0.16, 0.95), 5.0)
 	cv.draw_string(font, Vector2(sz.x * 0.5 - 64, -10), "《观看的永恒》", HORIZONTAL_ALIGNMENT_LEFT, -1, 20, Color("#e8dfc8"))
 
 func _s01_hand_angle(turns: int) -> float:
@@ -1456,7 +1520,15 @@ func _draw_closeup_eye(cv: CanvasItem, sz: Vector2) -> void:
 	for k in range(16):
 		var a := k * TAU / 16.0
 		cv.draw_line(c + Vector2(cos(a), sin(a)) * 26.0, c + Vector2(cos(a), sin(a)) * 52.0, Color(0.27, 0.4, 0.5, 0.6), 2.0)
-	cv.draw_circle(c, 24.0, Color("#151a1f"))
+	cv.draw_circle(c, 24.0 + 26.0 * s01_eye_zoom, Color("#151a1f"))
+	if s01_eye_zoom > 0.8:
+		# Right up close: a thin fold of skin shows along the top of the eyeball.
+		var lid_a := (s01_eye_zoom - 0.8) / 0.2
+		var fold := PackedVector2Array()
+		for i in range(21):
+			var a := PI + PI * i / 20.0
+			fold.append(c + Vector2(cos(a) * 150.0, sin(a) * 84.0 + 6.0))
+		cv.draw_polyline(fold, Color(0.86, 0.62, 0.56, 0.85 * lid_a), 7.0)
 	# The reflection: the hall's ceiling lights and floor bent into curves, and Graham, where she stands.
 	var side := clampf((player.position.x - S01_EYE_CENTER.x) / 500.0, -1.0, 1.0) if player else 0.0
 	var refl := Color(0.85, 0.92, 1.0, 0.28)
@@ -1464,17 +1536,24 @@ func _draw_closeup_eye(cv: CanvasItem, sz: Vector2) -> void:
 	cv.draw_arc(c + Vector2(0, -60), 70.0, PI * 0.3, PI * 0.7, 16, refl, 2.0)
 	for lx in [-1.0, 0.0, 1.0]:
 		cv.draw_circle(c + Vector2(lx * 24.0, -36.0 + absf(lx) * 6.0), 2.5, Color(1, 0.95, 0.8, 0.5))
+	var gz := 1.0 + 1.6 * s01_eye_zoom
 	var g := c + Vector2(side * 26.0, 6.0)
 	var a_g := 0.62
+	cv.draw_set_transform(Vector2.ZERO)
+	cv.draw_set_transform_matrix(_closeup_xform() * Transform2D(0.0, Vector2(gz, gz), 0.0, g - g * gz))
 	cv.draw_colored_polygon(PackedVector2Array([g + Vector2(-7, 8), g + Vector2(7, 8), g + Vector2(3, 22), g + Vector2(-3, 22)]), Color(0.29, 0.47, 0.66, a_g))
 	cv.draw_circle(g, 11.0, Color(0.95, 0.78, 0.63, a_g))
 	cv.draw_arc(g + Vector2(0, -3), 11.5, PI * 1.05, PI * 1.95, 12, Color(0.17, 0.21, 0.28, a_g + 0.2), 5.0)
 	cv.draw_circle(g + Vector2(-4, -1), 1.6, Color(0.1, 0.12, 0.18, a_g))
 	cv.draw_circle(g + Vector2(4, -1), 1.6, Color(0.1, 0.12, 0.18, a_g))
+	cv.draw_set_transform_matrix(_closeup_xform())
 	cv.draw_circle(c + Vector2(-22, -22), 8.0, Color(1, 1, 1, 0.55))
 	cv.draw_circle(c + Vector2(-12, -30), 3.0, Color(1, 1, 1, 0.5))
 	cv.draw_string(font, Vector2(sz.x * 0.5 - 70, sz.y - 40), "这不是一只眼睛", HORIZONTAL_ALIGNMENT_LEFT, -1, 22, Color("#e8e2d0"))
 	cv.draw_string(font, Vector2(sz.x * 0.5 - 90, -10), "《这不是一只眼睛》", HORIZONTAL_ALIGNMENT_LEFT, -1, 20, Color("#e8dfc8"))
+
+func _closeup_xform() -> Transform2D:
+	return closeup_xf
 
 ## --- 超写实插帧 (hyper-real inserts) -----------------------------------------------------------
 ## At a few peak beats the flat style hard-cuts, for under a second, to a still with far too much
@@ -1485,13 +1564,18 @@ const HYPER_RECT := Rect2(236, 80, 680, 400)
 
 ## Which insert is showing now, and how far into it (0..1); empty when none.
 func _s01_hyper_now() -> Array:
+	if hyper_flash_left > 0.0:
+		return [hyper_flash, 1.0 - hyper_flash_left / HYPER_FLASH_TIME]
 	if closeup == "":
 		return []
 	var t := closeup_anim_t
 	match closeup_anim:
 		"chalk":
-			if t >= 0.35 and t <= 0.72:
-				return ["hand", (t - 0.35) / 0.37]
+			if t >= 0.42 and t <= 0.78:
+				return ["hand", (t - 0.42) / 0.36]
+		"glove":
+			if t >= 0.25 and t <= 0.8:
+				return ["marble", (t - 0.25) / 0.55]
 		"door":
 			if t >= 0.26 and t <= 0.6:
 				return ["brass", (t - 0.26) / 0.34]
@@ -1525,10 +1609,17 @@ func _hyper_texture(kind: String) -> Texture2D:
 				c = c.lerp(Color(0.74, 0.40, 0.44), clampf(noise.get_noise_2d(x * 0.3 + 50.0, y * 0.3), 0.0, 1.0) * 0.5)
 				if f > 0.76:
 					c = c.darkened(0.28)
+			elif kind == "marble":
+				var vein := absf(noise.get_noise_2d(x * 0.7, y * 0.7))
+				c = Color(0.93, 0.92, 0.89).lerp(Color(0.62, 0.62, 0.6), clampf(1.0 - vein * 9.0, 0.0, 1.0) * 0.8)
+				c = c.lerp(Color(0.86, 0.85, 0.8), n * 0.3)
 			elif kind == "eyeball":
 				c = Color(0.97, 0.95, 0.91).lerp(Color(0.93, 0.78, 0.74), n * n)
 				if f > 0.85:
 					c = c.lerp(Color(0.85, 0.55, 0.55), 0.4)
+			elif kind == "paint":
+				var streak := noise.get_noise_2d(x * 0.25, y * 1.6) * 0.5 + 0.5
+				c = Color(0.62, 0.48, 0.28).lerp(Color(0.24, 0.17, 0.11), streak * 0.8 + n * 0.2)
 			else:
 				var b := noise.get_noise_2d(x * 0.12, y * 2.5) * 0.5 + 0.5
 				c = Color(0.42, 0.30, 0.10).lerp(Color(0.98, 0.84, 0.46), b)
@@ -1564,6 +1655,7 @@ func _hyper_veins(cv: CanvasItem, area: Rect2, center: Vector2, count: int, seed
 		var line := PackedVector2Array([p])
 		for k in range(6):
 			p += (center - p).normalized().rotated(rng.randf_range(-0.9, 0.9)) * rng.randf_range(14.0, 30.0)
+			p = p.clamp(area.position, area.end)
 			line.append(p)
 		cv.draw_polyline(line, Color(0.72, 0.12, 0.14, alpha), rng.randf_range(1.0, 2.6))
 
@@ -1669,6 +1761,68 @@ func _draw_hyperreal(cv: CanvasItem) -> void:
 			for i in range(60):
 				var q := (pc + Vector2(60, -110)).lerp(pc + Vector2(200, -50), rng.randf()) + Vector2(rng.randf_range(-6, 6), rng.randf_range(-6, 6))
 				cv.draw_circle(q, rng.randf_range(0.8, 2.0), Color(0.75, 0.74, 0.7))
+		"marble":
+			label = "大理石的手，被一只出汗的真手攥着"
+			cv.draw_rect(r, Color(0.16, 0.18, 0.2), true)
+			var marble_tex := _hyper_texture("marble")
+			var skin := _hyper_texture("skin")
+			var c := r.get_center()
+			# The marble forearm and hand, polished, with fine cracks.
+			_hyper_poly(cv, _hyper_capsule(c + Vector2(-330, 40), c + Vector2(150, -30), 120.0), marble_tex, r)
+			for k in range(4):
+				_hyper_poly(cv, _hyper_capsule(c + Vector2(150, -70 + k * 30), c + Vector2(290, -90 + k * 34), 34.0), marble_tex, r)
+			cv.draw_polyline(PackedVector2Array([c + Vector2(-60, -10), c + Vector2(-20, 10), c + Vector2(10, -4), c + Vector2(60, 16)]), Color(0.35, 0.35, 0.34, 0.8), 1.5)
+			# The guard's own fingers, sweaty, wrapped round it; the glove peels back off them.
+			var slide := minf(1.0, p * 1.4)
+			for k in range(4):
+				var base := c + Vector2(-150 + k * 46, 110)
+				_hyper_poly(cv, _hyper_capsule(base, base + Vector2(-10, -120), 42.0), skin, r)
+				cv.draw_circle(base + Vector2(-8, -104), 7.0, Color(1, 1, 1, 0.5))
+			cv.draw_colored_polygon(PackedVector2Array([c + Vector2(-260, 60) + Vector2(-260, 0) * slide, c + Vector2(40, 60) + Vector2(-260, 0) * slide, c + Vector2(40, 200), c + Vector2(-260, 200)]), Color(0.92, 0.91, 0.88))
+		"painted_eye":
+			label = "油画里的眼睛：龟裂、珍珠的反光"
+			cv.draw_texture_rect(_hyper_texture("paint"), r, false)
+			var c := r.get_center() + Vector2(-60, 0)
+			var almond := PackedVector2Array()
+			for i in range(32):
+				var a := TAU * i / 32.0
+				almond.append(c + Vector2(cos(a) * 200.0, sin(a) * 86.0 * (1.0 - 0.35 * absf(cos(a)))))
+			cv.draw_colored_polygon(almond, Color(0.92, 0.88, 0.8))
+			cv.draw_circle(c, 72.0, Color(0.33, 0.24, 0.16))
+			for k in range(40):
+				var d := Vector2.RIGHT.rotated(k * TAU / 40.0)
+				cv.draw_line(c + d * 32.0, c + d * 70.0, Color(0.45, 0.33, 0.2, 0.6), 2.0)
+			cv.draw_circle(c, 30.0, Color(0.05, 0.04, 0.03))
+			cv.draw_circle(c + Vector2(-24, -26), 13.0, Color(1, 1, 1, 0.85))
+			# The earphone (the pearl): a soft, pearly highlight.
+			var pearl := r.end - Vector2(120, 110)
+			for k in range(8):
+				cv.draw_circle(pearl, 56.0 - k * 6.0, Color(0.85 + k * 0.015, 0.86 + k * 0.015, 0.84 + k * 0.016))
+			cv.draw_circle(pearl + Vector2(-16, -18), 10.0, Color(1, 1, 1, 0.95))
+			# Craquelure: the old paint has cracked into a fine net.
+			var rng := RandomNumberGenerator.new()
+			rng.seed = 17
+			for i in range(70):
+				var q := r.position + Vector2(rng.randf() * r.size.x, rng.randf() * r.size.y)
+				var line := PackedVector2Array([q])
+				for k in range(4):
+					q = (q + Vector2(rng.randf_range(-40, 40), rng.randf_range(-40, 40))).clamp(r.position, r.end)
+					line.append(q)
+				cv.draw_polyline(line, Color(0.12, 0.08, 0.05, 0.55), 1.2)
+		"fluor":
+			label = "皮肤上的核黄素，在紫外灯下发光"
+			cv.draw_texture_rect(_hyper_texture("skin"), r, false, Color(0.5, 0.42, 0.85))
+			cv.draw_rect(r, Color(0.3, 0.1, 0.6, 0.35), true)
+			var rng := RandomNumberGenerator.new()
+			rng.seed = 23
+			for i in range(9):
+				var c := r.position + Vector2(rng.randf_range(80, r.size.x - 80), rng.randf_range(60, r.size.y - 60))
+				var big := rng.randf_range(20, 46)
+				for k in range(7):
+					cv.draw_circle(c, big * (2.2 - k * 0.2), Color(0.78, 1.0, 0.3, 0.05 + k * 0.03))
+				cv.draw_circle(c, big * 0.8, Color(0.85, 1.0, 0.45, 0.9))
+				cv.draw_line(c + Vector2(0, big * 0.6), c + Vector2(rng.randf_range(-6, 6), big * 0.6 + rng.randf_range(20, 60)), Color(0.85, 1.0, 0.45, 0.8), 4.0)
+				cv.draw_circle(c + Vector2(-big * 0.3, -big * 0.3), big * 0.18, Color(1, 1, 1, 0.8))
 		_:
 			label = "黄铜锁芯与粉笔灰"
 			cv.draw_texture_rect(_hyper_texture("brass"), r, false)
@@ -1691,6 +1845,986 @@ func _draw_hyperreal(cv: CanvasItem) -> void:
 	var font := ThemeDB.fallback_font
 	cv.draw_rect(Rect2(r.position + Vector2(10, r.size.y - 34), Vector2(330, 24)), Color(0, 0, 0, 0.65), true)
 	cv.draw_string(font, r.position + Vector2(18, r.size.y - 16), "超写实插帧（占位）· " + label, HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(1, 1, 1, 0.9))
+
+## --- Close-ups in the second hall (S02/S03) -------------------------------------------------
+## 保安 (a person), 《那喀索斯》 with its picture lamp (big: Graham's hand, WASD), 《机械维纳斯》 with
+## 《光》 above her (arms are dragged on with LAN's chalk, then E tries poses), and two close-ups seen
+## by LAN while it rides the belt, drawn in the blue-lake layer.
+const NARC_REGION := Rect2(230, 185, 200, 130)        # the part of the hall the 《那喀索斯》 close-up shows
+const NARC_SCALE := 3.0
+const VENUS_SHOULDER := {"left": Vector2(205, 145), "right": Vector2(315, 145)}
+const VENUS_ARM_REST := {"left": Vector2(95, 312), "right": Vector2(425, 312)}   # where each arm waits
+const VENUS_DROP := 46.0
+# Poses (elbow, hand) for the left and right arm, in the close-up's space. Four that are not it,
+# then the one that is: palms together, then a little apart, and the mirror's edge between them.
+const VENUS_POSES := [
+	{"name": "金苹果", "left": [Vector2(168, 108), Vector2(186, 58)], "right": [Vector2(326, 214), Vector2(318, 282)],
+		"line": "她举起一只金苹果。……帕里斯说，送给最美的人。\n不是这个。"},
+	{"name": "比耶", "left": [Vector2(176, 204), Vector2(214, 238)], "right": [Vector2(362, 150), Vector2(322, 96)],
+		"line": "她比了个耶。\nLAN：……不是这个。"},
+	{"name": "思想者", "left": [Vector2(222, 232), Vector2(292, 236)], "right": [Vector2(300, 232), Vector2(276, 124)],
+		"line": "她托着腮，想了很久。\n什么也没想出来。"},
+	{"name": "盾牌", "left": [Vector2(174, 192), Vector2(150, 222)], "right": [Vector2(290, 202), Vector2(192, 230)],
+		"line": "她举着战神的盾牌，在盾面上照自己。\n盾牌是凸的，照出来的脸是歪的。"},
+	{"name": "镜子", "left": [Vector2(214, 214), Vector2(256, 188)], "right": [Vector2(306, 214), Vector2(264, 188)], "line": ""}
+]
+const VENUS_REST_ARMS := {"left": [Vector2(194, 214), Vector2(204, 280)], "right": [Vector2(326, 214), Vector2(316, 280)]}
+
+func _closeup_local(screen: Vector2) -> Vector2:
+	var target: Rect2 = CLOSEUP_RECTS[_closeup_kind()]
+	return screen - target.position
+
+func _narc_map(p: Vector2) -> Vector2:
+	return (p - NARC_REGION.position) * NARC_SCALE
+
+## Opening the close-ups from the hall (E on the guard, 《那喀索斯》, Venus).
+func _hall_open(id: String, from: Rect2) -> void:
+	_open_closeup(id, from)
+	if id == "narcissus":
+		closeup_hand = Vector2(420, 250)
+
+func _hall_closeup_press_e() -> void:
+	if closeup == "" or closeup_closing or closeup_anim != "":
+		return
+	if s04_active and not s04_lines.is_empty():
+		_s04_next_line()
+		return
+	if s04_active and _s04_closeup_press_e():
+		return
+	match closeup:
+		"guard":
+			if s03_active and s03_hands_seen and not s03_glove_off and not blue_lake_active:
+				_s01_play("glove")
+				_show_dialogue("格雷汉：那不是你的手吧？\n她帮保安把手套摘下来——")
+				return
+		"narcissus":
+			var spot := _narc_spot_at(closeup_hand)
+			if spot == "lamp":
+				if s03_active:
+					_s03_use_picture_lamp()
+				else:
+					_show_dialogue("画灯没有亮。灯泡好像松了。")
+				return
+			if spot == "water":
+				_s01_play("ripple")
+				s02_ripple_left = 6.0
+				chapter_state.mark_event(&"s02_water_touched")
+				_show_dialogue("你碰了碰画框下沿的水。是真的水，凉的。\n涟漪散开，少年的倒影碎了。" if (s03_eye_lit or s03_mirror_held) else "你碰了碰画框下沿的水。是真的水，凉的。\n涟漪一圈一圈散开，少年还是低着头。")
+				return
+		"venus":
+			if s03_arms_returned and not s03_mirror_held:
+				_venus_next_pose()
+				return
+	_close_closeup()
+
+func _hall_closeup_hint() -> String:
+	if closeup_closing or closeup_anim != "":
+		return ""
+	if s04_active:
+		return "E 继续" if not s04_lines.is_empty() else _s04_closeup_hint()
+	match closeup:
+		"guard":
+			if s03_active and s03_hands_seen and not s03_glove_off and not blue_lake_active:
+				return "E 那不是你的手吧"
+		"narcissus":
+			return "E 碰一碰　　WASD 移动手" if _narc_spot_at(closeup_hand) != "" else "WASD 移动手　　E 收起"
+		"venus":
+			if _venus_arm_waiting():
+				return "左键拖动手臂　　Space 收起粉笔" if blue_lake_active else "Space 拿出粉笔　　E 收起"
+			if s03_arms_returned and not s03_mirror_held:
+				return "E 换个姿势"
+	return "E 收起"
+
+## Space in the Venus close-up: LAN's chalk drags her arms onto her shoulders. Before that (her eye
+## just lit), Space puts the close-up away and borrows her eye in the hall as before.
+func _hall_closeup_space() -> void:
+	if closeup_closing or closeup_anim != "":
+		return
+	if closeup == "bench":
+		if not blue_lake_transform_completed:
+			_show_dialogue("LAN：先看看那幅会发光的画。")
+			return
+		blue_lake_active = not blue_lake_active
+		chalk_cursor.set_active(blue_lake_active)
+		visual_mode = "Chalk Interaction" if blue_lake_active else "Standard"
+		_show_dialogue("LAN：顺着信号流的方向，描它的节点。" if blue_lake_active else "LAN：……先收起来。")
+		_update_ui()
+		return
+	if closeup == "venus" and _venus_arm_waiting() and blue_lake_transform_completed:
+		blue_lake_active = not blue_lake_active
+		chalk_cursor.set_active(blue_lake_active)
+		visual_mode = "Chalk Interaction" if blue_lake_active else "Standard"
+		_show_dialogue("LAN：把手臂拖到她的断口上。" if blue_lake_active else "LAN：……先收起来。")
+		_update_ui()
+		return
+	if closeup == "venus" and s03_active:
+		closeup = ""
+		closeup_t = 0.0
+		player.input_locked = false
+		_try_toggle_s03_blue_lake()
+
+func _venus_arm_waiting() -> bool:
+	return s03_active and ((s03_left_arm_ready and not s03_left_installed) or (s03_right_arm_ready and not s03_right_installed))
+
+func _venus_grab(local: Vector2) -> void:
+	for side in ["left", "right"]:
+		var ready: bool = s03_left_arm_ready if side == "left" else s03_right_arm_ready
+		var done: bool = s03_left_installed if side == "left" else s03_right_installed
+		var rest: Vector2 = VENUS_ARM_REST[side]
+		if ready and not done and local.distance_to(rest) <= 60.0:
+			venus_drag = side
+			return
+
+func _venus_drop(local: Vector2) -> void:
+	var side := venus_drag
+	venus_drag = ""
+	if side == "":
+		return
+	var other := "right" if side == "left" else "left"
+	var stump: Vector2 = VENUS_SHOULDER[side]
+	var wrong: Vector2 = VENUS_SHOULDER[other]
+	if local.distance_to(stump) <= VENUS_DROP:
+		_venus_install(side)
+	elif local.distance_to(wrong) <= VENUS_DROP:
+		_show_dialogue("大理石的手臂，接不上锈的那一侧。" if side == "left" else "锈铁的手臂，接不上大理石的那一侧。")
+
+func _venus_install(side: String) -> void:
+	if side == "left":
+		s03_left_installed = true
+		chapter_state.mark_event(&"s03_marble_arm_installed")
+		_show_dialogue("LAN 用粉笔把大理石手臂拖到断口上——咔哒，接上了。\n她用这只手碰了碰自己的脸。")
+	else:
+		s03_right_installed = true
+		chapter_state.mark_event(&"s03_iron_arm_installed")
+		_show_dialogue("锈铁手臂越过中线，粉笔尖碰到了那面看不见的镜子，凉的。\n咔哒，接上了。")
+	if s03_left_installed and s03_right_installed:
+		s03_arms_returned = true
+		chapter_state.mark_event(&"s03_arms_returned")
+		blue_lake_active = false
+		chalk_cursor.set_active(false)
+		visual_mode = "Standard"
+		venus_pose = -1
+		objective_label.text = "让维纳斯摆出她原本的姿势"
+		_show_dialogue("两只手臂都回来了。她活动了一下手指。\n……她原本是什么姿势？")
+		_update_ui()
+	else:
+		_s03_update_objective()
+
+func _venus_next_pose() -> void:
+	venus_pose_prev = venus_pose
+	venus_pose += 1
+	chapter_state.mark_event(StringName("s03_venus_pose_%d" % venus_pose))
+	if venus_pose >= VENUS_POSES.size() - 1:
+		venus_pose = VENUS_POSES.size() - 1
+		_s01_play("mirror_pose")
+		_show_dialogue("她把两只手向前伸，掌心合在一起——")
+		return
+	_s01_play("pose")
+	var line: String = VENUS_POSES[venus_pose].line
+	_show_dialogue(line)
+
+func _venus_mirror_done() -> void:
+	s03_mirror_held = true
+	chapter_state.mark_event(&"s03_mirror_held")
+	chapter_state.learn(&"s03_visual_is_not_reality")
+	s03_mirror_line_pending = true
+	objective_label.text = "让镜子里的你站到对面那扇门前"
+	_show_dialogue("……又慢慢分开。掌心之间，多出一道细细的亮边。\n她的眼睛亮了一下。")
+
+## The arms (elbow, hand) for the current pose, eased from the previous one while a pose plays.
+func _venus_arms(side: String) -> Array:
+	var to: Array = VENUS_REST_ARMS[side] if venus_pose < 0 else VENUS_POSES[venus_pose][side]
+	var from: Array = VENUS_REST_ARMS[side] if venus_pose_prev < 0 else VENUS_POSES[venus_pose_prev][side]
+	var k := 1.0
+	if closeup_anim == "pose":
+		k = closeup_anim_t
+	elif closeup_anim == "mirror_pose":
+		k = minf(1.0, closeup_anim_t / 0.4)
+	k = k * k * (3.0 - 2.0 * k)
+	var elbow: Vector2 = (from[0] as Vector2).lerp(to[0], k)
+	var hand: Vector2 = (from[1] as Vector2).lerp(to[1], k)
+	# The mirror pose: palms together, then a little apart.
+	if venus_pose == VENUS_POSES.size() - 1 and (closeup_anim != "mirror_pose" or closeup_anim_t > 0.45):
+		var apart := 1.0 if closeup_anim != "mirror_pose" else clampf((closeup_anim_t - 0.45) / 0.25, 0.0, 1.0)
+		hand += Vector2(-8.0 if side == "left" else 8.0, 0) * apart
+	return [elbow, hand]
+
+## --- 《那喀索斯》 close-up spots (its own space, 600 × 390) -----------------------------------------
+func _narc_spot_at(p: Vector2) -> String:
+	if p.distance_to(_narc_map(S03_PICTURE_LAMP)) <= 34.0:
+		return "lamp"
+	if p.y >= 330.0 and p.y <= 372.0 and p.x >= 160.0 and p.x <= 440.0:
+		return "water"
+	return ""
+
+## --- Drawing ---------------------------------------------------------------------------------------
+func _draw_closeup_guard(cv: CanvasItem, sz: Vector2) -> void:
+	var dark := _s02_darkness()
+	var font := ThemeDB.fallback_font
+	cv.draw_rect(Rect2(Vector2.ZERO, sz), Color("#3a3128"), true)
+	var uniform := Color("#566b7a")
+	var skin := Color("#bba88c")
+	var marble := Color("#e8e4da")
+	# Head and cap: he has not blinked in years.
+	cv.draw_circle(Vector2(170, 110), 52.0, skin)
+	cv.draw_rect(Rect2(110, 52, 120, 26), Color("#2d3a46"), true)
+	cv.draw_rect(Rect2(100, 74, 140, 8), Color("#1f2933"), true)
+	cv.draw_circle(Vector2(152, 112), 5.0, Color("#2a2420"))
+	cv.draw_circle(Vector2(190, 112), 5.0, Color("#2a2420"))
+	cv.draw_line(Vector2(156, 140), Vector2(186, 140), Color("#6b5a48"), 3.0)
+	cv.draw_rect(Rect2(90, 160, 160, 220), uniform, true)
+	cv.draw_rect(Rect2(160, 168, 20, 30), Color("#c9b16a"), true)
+	# The arm he has held up for years, pointing across, out of the close-up.
+	cv.draw_line(Vector2(240, 190), Vector2(360, 150), uniform, 34.0)
+	var t := closeup_anim_t if closeup_anim == "glove" else (1.0 if s03_glove_off else 0.0)
+	if s03_glove_off and closeup_anim != "glove":
+		cv.draw_line(Vector2(360, 150), Vector2(430, 128), marble, 26.0)
+		cv.draw_circle(Vector2(432, 127), 15.0, marble)
+	else:
+		cv.draw_line(Vector2(360, 150), Vector2(430, 128), marble.darkened(0.1), 26.0)
+		var off := Vector2(60, -20) * clampf((t - 0.2) / 0.4, 0.0, 1.0)
+		cv.draw_line(Vector2(360, 150) + off, Vector2(430, 128) + off, Color("#efeae0"), 30.0)
+		cv.draw_circle(Vector2(434, 126) + off, 19.0, Color("#efeae0"))
+		cv.draw_line(Vector2(360, 140) + off, Vector2(360, 160) + off, Color("#b8b2a6"), 2.0)
+	cv.draw_string(font, Vector2(20, 30), "保安", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color("#e8dfc8"))
+	if dark > 0.01:
+		cv.draw_rect(Rect2(Vector2.ZERO, sz), Color(0.02, 0.03, 0.05, 0.55 * dark), true)
+		cv.draw_arc(Vector2(170, 110), 53.0, PI * 1.1, PI * 1.6, 16, Color(1, 0.85, 0.6, 0.35 * dark), 2.0)
+
+func _draw_closeup_narcissus(cv: CanvasItem, sz: Vector2) -> void:
+	var font := ThemeDB.fallback_font
+	var lit := s03_eye_lit or s03_mirror_held
+	var time := Time.get_ticks_msec() * 0.001
+	cv.draw_rect(Rect2(Vector2.ZERO, sz), Color("#4a3c2e"), true)
+	var frame := Rect2(_narc_map(S02_NARCISSUS_RECT.position), S02_NARCISSUS_RECT.size * NARC_SCALE)
+	cv.draw_rect(frame, Color("#b49464"), true)
+	var inner := frame.grow(-21.0)
+	cv.draw_rect(inner, Color("#3a2e24"), true)
+	# The boy, kneeling, bent over the bottom of the frame.
+	var skin := Color("#d9b89a")
+	var body := PackedVector2Array()
+	for p in [Vector2(310, 252), Vector2(336, 258), Vector2(340, 284), Vector2(312, 292)]:
+		body.append(_narc_map(p))
+	cv.draw_colored_polygon(body, Color("#8a5a3c"))
+	cv.draw_circle(_narc_map(Vector2(345, 262)), 21.0, skin)
+	cv.draw_line(_narc_map(Vector2(337, 266)), _narc_map(Vector2(354, 294)), skin, 9.0)
+	cv.draw_rect(Rect2(_narc_map(Vector2(304, 286)), Vector2(120, 24)), Color("#5d4030"), true)
+	# The water is real: it runs along the bottom of the frame.
+	var water := Rect2(inner.position.x, 334, inner.size.x, inner.end.y - 334 + 14)
+	cv.draw_rect(water, Color(0.25, 0.42, 0.5, 0.95), true)
+	for i in range(4):
+		var y := water.position.y + 5.0 + i * 7.0
+		var off := sin(time * 2.0 + i) * 8.0
+		cv.draw_line(Vector2(water.position.x + 10 + off, y), Vector2(water.end.x - 10 + off, y), Color(0.85, 0.95, 1.0, 0.25 + (0.35 if lit else 0.1)), 1.5)
+	var ripple := closeup_anim_t if closeup_anim == "ripple" else -1.0
+	if lit:
+		# The boy's reflection, upside down; a ripple breaks it, then it settles again.
+		var shake := 0.0 if ripple < 0.0 else sin(ripple * 30.0) * 10.0 * (1.0 - ripple)
+		var rc := _narc_map(Vector2(345, 262))
+		rc.y = water.position.y + 16.0
+		cv.draw_circle(rc + Vector2(shake, 0), 13.0, Color(0.85, 0.72, 0.6, 0.6 * (1.0 if ripple < 0.0 else 0.4 + 0.6 * ripple)))
+		cv.draw_circle(rc + Vector2(-shake * 0.6, 8), 9.0, Color(0.85, 0.72, 0.6, 0.3))
+	if ripple >= 0.0:
+		var at := Vector2(clampf(closeup_hand.x, water.position.x + 20, water.end.x - 20), water.position.y + 14)
+		for k in range(3):
+			var rr := (ripple * 1.2 - k * 0.2) * 150.0
+			if rr > 0.0:
+				var ring := PackedVector2Array()
+				for i in range(25):
+					var a := TAU * i / 24.0
+					ring.append(at + Vector2(cos(a) * rr, sin(a) * rr * 0.12))
+				cv.draw_polyline(ring, Color(0.9, 0.97, 1.0, 0.6 * (1.0 - ripple)), 2.0)
+	# The picture lamp on its arm.
+	var lamp := _narc_map(S03_PICTURE_LAMP)
+	var mount := _narc_map(Vector2(S02_NARCISSUS_RECT.position.x + 10.0, S02_NARCISSUS_RECT.position.y))
+	cv.draw_line(mount, lamp, Color("#8d7b5c"), 6.0)
+	cv.draw_colored_polygon(PackedVector2Array([lamp + Vector2(-20, -12), lamp + Vector2(20, -12), lamp + Vector2(28, 14), lamp + Vector2(-28, 14)]), Color("#c8a35a"))
+	if s03_lamp_fixed:
+		var hit := _narc_map(_s03_water_hit(s03_lamp_angle))
+		hit.y = water.position.y
+		var end := _narc_map(_s03_reflection_end(s03_lamp_angle))
+		# The reflected ray only shows up to the close-up's edge: whether it reaches the prism, you see
+		# from the hall.
+		if end.y < 0.0:
+			end = hit + (end - hit) * ((0.0 - hit.y) / (end.y - hit.y))
+		var warm := Color(1.0, 0.85, 0.55, 0.45)
+		cv.draw_circle(lamp + Vector2(0, 10), 18.0, Color(1.0, 0.9, 0.6, 0.6))
+		cv.draw_colored_polygon(PackedVector2Array([lamp + Vector2(-10, 12), lamp + Vector2(10, 12), hit + Vector2(14, 0), hit + Vector2(-14, 0)]), Color(1.0, 0.85, 0.55, 0.18))
+		cv.draw_line(hit, end, warm, 8.0)
+		cv.draw_circle(hit, 9.0, Color(1, 1, 1, 0.6))
+	elif _s02_darkness() > 0.5:
+		cv.draw_rect(Rect2(Vector2.ZERO, sz), Color(0.02, 0.03, 0.05, 0.55), true)
+		# In the dark, only the water glimmers.
+		for i in range(5):
+			var gx := water.position.x + fmod(i * 61.0 + time * 20.0, water.size.x)
+			cv.draw_circle(Vector2(gx, water.position.y + 8), 2.0, Color(0.85, 0.95, 1.0, 0.5))
+	var spot := _narc_spot_at(closeup_hand) if closeup_anim == "" else ""
+	if spot == "lamp":
+		cv.draw_arc(lamp, 36.0, 0.0, TAU, 28, Color(1, 1, 1, 0.55), 2.0)
+	elif spot == "water":
+		cv.draw_rect(Rect2(160, 330, 280, 42), Color(1, 1, 1, 0.45), false, 2.0)
+	_draw_closeup_hand(cv, sz.y + 70.0)
+	cv.draw_string(font, Vector2(sz.x * 0.5 - 60, -10), "《那喀索斯》", HORIZONTAL_ALIGNMENT_LEFT, -1, 20, Color("#e8dfc8"))
+
+func _draw_closeup_venus(cv: CanvasItem, sz: Vector2) -> void:
+	var font := ThemeDB.fallback_font
+	var marble := Color("#cfc8b8")
+	var rust := Color("#7c4a2c")
+	var lit := s03_eye_lit or s03_mirror_held
+	cv.draw_rect(Rect2(Vector2.ZERO, sz), Color("#2b2620") if not s03_mirror_held else Color("#5a4c3a"), true)
+	cv.draw_rect(Rect2(sz.x * 0.5, 0, sz.x * 0.5, sz.y), Color(0.3, 0.45, 0.6, 0.12), true)
+	cv.draw_rect(Rect2(180, 340, 80, 60), marble.darkened(0.2), true)
+	cv.draw_rect(Rect2(260, 340, 80, 60), rust.darkened(0.2), true)
+	var left := PackedVector2Array([Vector2(260, 120), Vector2(240, 124), Vector2(205, 140), Vector2(196, 162), Vector2(212, 192), Vector2(216, 240), Vector2(196, 290), Vector2(204, 340), Vector2(260, 340)])
+	var right := PackedVector2Array()
+	for p in left:
+		right.append(Vector2(520.0 - p.x, p.y))
+	cv.draw_colored_polygon(left, marble)
+	cv.draw_colored_polygon(right, rust)
+	var head_l := PackedVector2Array()
+	var head_r := PackedVector2Array()
+	for i in range(13):
+		var a := PI * 0.5 + PI * i / 12.0
+		head_l.append(Vector2(260, 88) + Vector2(cos(a), sin(a)) * 32.0)
+		head_r.append(Vector2(260, 88) + Vector2(-cos(a), sin(a)) * 32.0)
+	cv.draw_colored_polygon(head_l, marble)
+	cv.draw_colored_polygon(head_r, rust)
+	for i in range(6):
+		cv.draw_circle(Vector2(268 + fmod(i * 13.0, 40.0), 160 + i * 28.0), 3.0, Color("#5a2f1a"))
+	# The shoulders: two clean breaks.
+	for side in ["left", "right"]:
+		var s: Vector2 = VENUS_SHOULDER[side]
+		cv.draw_circle(s, 13.0, (marble if side == "left" else rust).darkened(0.25))
+	# 《光》: the inverted prism over her head, and the two beams crossing in her eye.
+	cv.draw_colored_polygon(PackedVector2Array([Vector2(222, 8), Vector2(298, 8), Vector2(260, 46)]), Color(0.8, 0.9, 1.0, 0.35))
+	cv.draw_polyline(PackedVector2Array([Vector2(222, 8), Vector2(298, 8), Vector2(260, 46), Vector2(222, 8)]), Color(0.85, 0.95, 1.0, 0.8), 2.0)
+	var eye := Vector2(260, 86)
+	if lit:
+		cv.draw_line(Vector2(240, 30), eye, Color(1.0, 0.85, 0.55, 0.55), 6.0)
+		cv.draw_line(Vector2(280, 30), eye, Color(0.6, 0.8, 1.0, 0.55), 6.0)
+		var glow := 1.0
+		if closeup_anim == "mirror_pose" and closeup_anim_t > 0.7:
+			glow = 1.0 + 2.0 * sin((closeup_anim_t - 0.7) / 0.3 * PI)
+		cv.draw_circle(eye, 9.0 * glow, Color(1.0, 0.97, 0.85, 0.85))
+		cv.draw_circle(eye, 18.0 * glow, Color(1.0, 0.95, 0.8, 0.25))
+	else:
+		cv.draw_circle(eye + Vector2(-12, 0), 4.0, Color("#2a2420"))
+		cv.draw_circle(eye + Vector2(12, 0), 4.0, Color("#1c1410"))
+	# The arms: on her, or waiting at the bottom (the guard holds the marble one; the iron one lies
+	# among fallen rust leaves), or being dragged by LAN's chalk.
+	for side in ["left", "right"]:
+		var col := marble if side == "left" else rust
+		var installed: bool = s03_left_installed if side == "left" else s03_right_installed
+		var ready: bool = s03_left_arm_ready if side == "left" else s03_right_arm_ready
+		var shoulder: Vector2 = VENUS_SHOULDER[side]
+		if installed:
+			var arm := _venus_arms(side)
+			var elbow: Vector2 = arm[0]
+			var hand: Vector2 = arm[1]
+			cv.draw_line(shoulder, elbow, col, 22.0)
+			cv.draw_line(elbow, hand, col, 18.0)
+			cv.draw_circle(elbow, 10.0, col)
+			cv.draw_circle(hand, 11.0, col.lightened(0.05))
+		elif ready:
+			var at: Vector2 = VENUS_ARM_REST[side]
+			if venus_drag == side:
+				at = _closeup_local(get_viewport().get_mouse_position())
+			cv.draw_line(at + Vector2(-50, 10), at + Vector2(40, -8), col, 20.0)
+			cv.draw_circle(at + Vector2(46, -10), 12.0, col.lightened(0.05))
+			if side == "left" and venus_drag != side:
+				cv.draw_circle(at + Vector2(-6, 18), 10.0, Color("#bba88c"))
+				cv.draw_circle(at + Vector2(14, 14), 10.0, Color("#bba88c"))
+			if blue_lake_active:
+				cv.draw_arc(VENUS_SHOULDER[side], VENUS_DROP, 0.0, TAU, 28, Color(0.75, 0.91, 1.0, 0.7), 2.0)
+	# The mirror's edge appears between her palms: from the front only its thickness shows.
+	if s03_mirror_held or (closeup_anim == "mirror_pose" and closeup_anim_t > 0.65):
+		var grow := 1.0 if s03_mirror_held else clampf((closeup_anim_t - 0.65) / 0.3, 0.0, 1.0)
+		cv.draw_line(Vector2(260, 188 - 46 * grow), Vector2(260, 188 + 46 * grow), Color(0.9, 0.97, 1.0, 0.95), 3.0)
+		cv.draw_line(Vector2(258, 188 - 46 * grow), Vector2(258, 188 + 46 * grow), Color(0.55, 0.65, 0.7, 0.9), 1.0)
+	if closeup_anim != "pose" or closeup_anim_t > 0.5:
+		_draw_venus_prop(cv)
+	if not lit:
+		cv.draw_rect(Rect2(Vector2.ZERO, sz), Color(0.02, 0.03, 0.05, 0.55), true)
+	cv.draw_string(font, Vector2(sz.x * 0.5 - 80, -10), "《机械维纳斯》《光》", HORIZONTAL_ALIGNMENT_LEFT, -1, 20, Color("#e8dfc8"))
+
+func _draw_venus_prop(cv: CanvasItem) -> void:
+	if venus_pose < 0 or venus_pose >= VENUS_POSES.size() - 1:
+		return
+	var name_now: String = VENUS_POSES[venus_pose].name
+	var arm_l := _venus_arms("left")
+	var arm_r := _venus_arms("right")
+	var hl: Vector2 = arm_l[1]
+	var hr: Vector2 = arm_r[1]
+	match name_now:
+		"金苹果":
+			cv.draw_circle(hl + Vector2(0, -14), 13.0, Color("#e0b23c"))
+			cv.draw_line(hl + Vector2(0, -27), hl + Vector2(3, -33), Color("#5b4a2a"), 2.0)
+		"比耶":
+			cv.draw_line(hr, hr + Vector2(-8, -24), Color("#7c4a2c"), 5.0)
+			cv.draw_line(hr, hr + Vector2(6, -24), Color("#7c4a2c"), 5.0)
+		"盾牌":
+			var c := hl.lerp(hr, 0.5) + Vector2(-6, 8)
+			cv.draw_circle(c, 50.0, Color(0.78, 0.62, 0.3, 0.9))
+			cv.draw_arc(c, 50.0, 0.0, TAU, 32, Color(0.5, 0.38, 0.16), 3.0)
+			cv.draw_arc(c + Vector2(-8, -6), 18.0, 0.0, TAU, 20, Color(1, 1, 1, 0.35), 3.0)
+
+## LAN's close-ups, drawn in the blue-lake layer: #0078D7 and chalk.
+func _draw_closeup_lan(cv: CanvasItem, sz: Vector2) -> void:
+	var font := ThemeDB.fallback_font
+	var chalk := Color(0.95, 0.97, 1.0, 0.95)
+	cv.draw_rect(Rect2(Vector2.ZERO, sz), Color("#0078D7"), true)
+	for i in range(14):
+		cv.draw_string(font, Vector2(14, 22 + i * 26), ["0x0332", "rust.fe", "belt -> 0", "mirror?", "0779", "里", "if (left) right", "water.y"][i % 8], HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(1, 1, 1, 0.12))
+	if closeup == "lan_tag":
+		var tag := Rect2(110, 90, 200, 120)
+		cv.draw_rect(tag, chalk, false, 3.0)
+		cv.draw_circle(Vector2(130, 110), 8.0, Color("#0078D7"))
+		cv.draw_arc(Vector2(130, 110), 8.0, 0.0, TAU, 16, chalk, 2.0)
+		cv.draw_line(Vector2(130, 102), Vector2(70, 40), chalk, 2.0)
+		cv.draw_string(font, Vector2(150, 130), "No.0779", HORIZONTAL_ALIGNMENT_LEFT, -1, 22, chalk)
+		cv.draw_string(font, Vector2(150, 162), "修理工", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, chalk)
+		cv.draw_string(font, Vector2(150, 192), "格雷汉·斯蒂尔", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, chalk)
+		for k in range(8):
+			cv.draw_line(Vector2(120 + k * 8, 220), Vector2(120 + k * 8, 244), chalk, 1.0 + (k % 2))
+		cv.draw_string(font, Vector2(sz.x * 0.5 - 60, -10), "对面门把手上的标签", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color("#bfe8ff"))
+	else:
+		var frame := Rect2(60, 30, 300, 230)
+		cv.draw_rect(frame, chalk, false, 3.0)
+		var skull := Vector2(250, 100)
+		cv.draw_arc(skull, 26.0, 0.0, TAU, 28, chalk, 2.5)
+		cv.draw_circle(skull + Vector2(-9, -2), 6.0, chalk)
+		cv.draw_circle(skull + Vector2(8, -2), 6.0, chalk)
+		cv.draw_line(Vector2(228, 116), Vector2(170, 196), chalk, 2.0)
+		for i in range(5):
+			cv.draw_line(Vector2(215 - i * 4, 140 + i * 12), Vector2(175 + i * 3, 150 + i * 12), chalk, 1.5)
+		cv.draw_line(Vector2(80, 214), Vector2(340, 214), chalk, 2.0)
+		# Its water reflects the boy, not the skull.
+		var boy := Vector2(250, 236)
+		cv.draw_arc(boy, 14.0, 0.0, TAU, 20, Color(1.0, 0.86, 0.6, 0.9), 2.0)
+		cv.draw_line(boy + Vector2(-6, 2), boy + Vector2(-2, 2), Color(1.0, 0.86, 0.6, 0.9), 2.0)
+		cv.draw_line(boy + Vector2(3, 2), boy + Vector2(7, 2), Color(1.0, 0.86, 0.6, 0.9), 2.0)
+		cv.draw_string(font, Vector2(sz.x * 0.5 - 60, -10), "《那喀索斯》（里）", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color("#bfe8ff"))
+
+## --- S04 close-ups ------------------------------------------------------------------------------
+## 修复台 (big: Graham's gaze, WASD — the centre of the gaze sees detail and stillness, only the
+## corner of the eye sees the signal move), 抹核黄素 (big: a brush on Graham's front, the joints make
+## a point-light walker), 《窗》, 《戴珍珠耳机的少女》 (many faces), 参观者, 《双生》.
+const S04_BENCH_STARRY := Vector2(165, 170)            # 《星空下的神经》's centre in the bench close-up
+const S04_BENCH_STARRY_SCALE := 3.0
+const S04_FOVEA := 58.0
+# Graham's front, in the riboflavin close-up: shoulders, elbows, wrists, hips, knees, ankles (L, R).
+const S04_JOINTS := [Vector2(140, 120), Vector2(220, 120), Vector2(120, 185), Vector2(240, 185), Vector2(112, 245), Vector2(248, 245),
+	Vector2(155, 238), Vector2(205, 238), Vector2(150, 315), Vector2(210, 315), Vector2(148, 388), Vector2(212, 388)]
+const S04_DROPS := 12
+const S04_JOINT_REACH := 20.0
+const S04_RECOGNISE_JOINTS := 8
+# The girl's faces, by where the story is.
+const S04_GIRL_FACES := {
+	"before": [["wink", "她冲你眨了眨一只眼。"], ["tongue", "她吐了吐舌头。"], ["headphones", "她摘下一边耳机，假装在听你说话……又戴了回去。"], ["still", "你一碰，她立刻坐正，装成一幅普通的画。"]],
+	"repaired": [["pout", "她噘着嘴。好像知道你是来干什么的。"], ["eyeroll", "她翻了个白眼。"], ["arms", "她把手抱在胸前，扭过头去。"]],
+	"caught": [["cry", "她委屈地掉眼泪。"], ["lan", "她看见你身边的谁，先是一惊，又心虚地笑了：\n少女：……你也在呀。好久不见。"], ["shh", "她冲你比了个“嘘”。\n像是在说：别告诉修复师。"]]
+}
+const HYPER_FLASH_TIME := 0.9
+
+func _s04_bench_node(i: int) -> Vector2:
+	var node: Vector2 = S04_SIGNAL_NODES[i]
+	return S04_BENCH_STARRY + (node - S04_STARRY_CENTER) * S04_BENCH_STARRY_SCALE
+
+## In the bench close-up: how much of the signal shows at a point. It needs the rods (dusk or dark),
+## and only the corner of the eye sees it: inside the gaze's centre it holds still.
+func _s04_bench_signal_alpha(p: Vector2) -> float:
+	if s04_starry_repaired:
+		return 1.0
+	var rods := clampf((s04_win_t - 0.25) / 0.25, 0.0, 1.0)
+	var aside := clampf((p.distance_to(closeup_hand) - S04_FOVEA) / 50.0, 0.0, 1.0)
+	return rods * aside
+
+func _s04_bench_spot(p: Vector2) -> String:
+	if Rect2(318, 72, 76, 100).has_point(p):
+		return "front"
+	if Rect2(394, 60, 70, 250).has_point(p):
+		return "side"
+	if s04_has_riboflavin and p.distance_to(Vector2(500, 286)) <= 26.0:
+		return "bottle"
+	if p.distance_to(Vector2(556, 290)) <= 26.0:
+		return "uv"
+	return ""
+
+func _s04_bench_chalk(local: Vector2) -> void:
+	for i in range(S04_SIGNAL_NODES.size()):
+		if local.distance_to(_s04_bench_node(i)) <= 24.0:
+			_s04_trace(i)
+			return
+
+func _s04_open_smear() -> void:
+	s04_dabs.clear()
+	s04_riboflavin_applied = false
+	_open_closeup("smear", Rect2(756, 354, 40, 40))
+	closeup_hand = Vector2(180, 240)
+	_show_dialogue("格雷汉拧开那一小瓶黄颜料。\n抹在哪里呢？（一共 %d 滴）" % S04_DROPS)
+
+func _s04_dab() -> void:
+	s04_dabs.append(closeup_hand)
+	if s04_dabs.size() < S04_DROPS:
+		return
+	s04_riboflavin_applied = true
+	chapter_state.mark_event(&"s04_pigment_applied")
+	var hits := _s04_joint_hits()
+	chapter_state.mark_event(StringName("s04_pigment_joints_%d" % hits))
+	_show_dialogue("十二滴都抹上了。黄色的，在亮处不太显眼。" + ("" if hits >= S04_RECOGNISE_JOINTS else "\n（有几滴好像抹在了不怎么动的地方。）"))
+	closeup_closing = true
+
+func _s04_joint_hits() -> int:
+	var hits := 0
+	for j in S04_JOINTS:
+		var joint: Vector2 = j
+		for d in s04_dabs:
+			if joint.distance_to(d) <= S04_JOINT_REACH:
+				hits += 1
+				break
+	return hits
+
+## The girl's faces in her close-up; each E shows the next one, after the last E puts it away.
+func _s04_girl_phase() -> String:
+	if s04_girl_caught:
+		return "caught"
+	if s04_starry_repaired:
+		return "repaired"
+	return "before"
+
+func _s04_girl_in_frame() -> bool:
+	return not s04_girl_out
+
+func _s04_girl_next_face() -> bool:
+	if not _s04_girl_in_frame():
+		if s04_girl_face >= 0:
+			s04_girl_face = -1
+			return false
+		s04_girl_face = 0
+		_show_dialogue("画框里只有一把空椅子，和一串黄色的小脚印。\n……画外面，好像有人在偷笑。")
+		return true
+	var faces: Array = S04_GIRL_FACES[_s04_girl_phase()]
+	s04_girl_face += 1
+	if s04_girl_face >= faces.size():
+		s04_girl_face = -1
+		return false
+	var face: Array = faces[s04_girl_face]
+	chapter_state.mark_event(StringName("s04_girl_face_" + str(face[0])))
+	_s01_play("face")
+	_show_dialogue(face[1])
+	return true
+
+func _s04_girl_face_name() -> String:
+	if s04_girl_face < 0:
+		return ""
+	var faces: Array = S04_GIRL_FACES[_s04_girl_phase()]
+	if s04_girl_face >= faces.size():
+		return ""
+	return faces[s04_girl_face][0]
+
+func _s04_window_actionable() -> bool:
+	return (s04_uv_on and s04_win_t >= 0.5 and not s04_handle_found) \
+		or (s04_girl_caught and not s04_frame_installed) \
+		or (s04_uv_on and not chapter_state.has_event(&"s04_blue_handprint_seen"))
+
+func _s04_closeup_press_e() -> bool:
+	match closeup:
+		"bench":
+			var spot := _s04_bench_spot(closeup_hand)
+			match spot:
+				"front":
+					_s04_talk_to_restorer()
+					return true
+				"side":
+					if s04_win_t > 0.75:
+						_show_dialogue("（太暗了。修复师停下了手，什么也看不见。）")
+					else:
+						_show_dialogue("你拍了拍修复师的肩膀。她盯着《星空下的神经》，一点反应也没有。\n她好像只看得见正前方。")
+					return true
+				"bottle":
+					_s04_open_smear()
+					return true
+				"uv":
+					_s04_use_uv()
+					return true
+		"smear":
+			_s04_dab()
+			return true
+		"girl":
+			return _s04_girl_next_face()
+		"window":
+			if _s04_window_actionable():
+				_s04_look_at_window()
+				return true
+	return false
+
+func _s04_closeup_hint() -> String:
+	match closeup:
+		"bench":
+			if blue_lake_active:
+				return "左键 描信号　　Space 收起粉笔"
+			match _s04_bench_spot(closeup_hand):
+				"front":
+					return "E 说话"
+				"side":
+					return "E 拍拍她"
+				"bottle":
+					return "E 擦掉重抹" if s04_riboflavin_applied else "E 拿起核黄素"
+				"uv":
+					return "E 关紫外灯" if s04_uv_on else "E 开紫外灯"
+			return "WASD 移动视线　　E 收起"
+		"smear":
+			return "WASD 移动刷子　　E 抹一滴（还剩 %d 滴）" % (S04_DROPS - s04_dabs.size())
+		"girl":
+			var faces: Array = S04_GIRL_FACES[_s04_girl_phase()]
+			if not _s04_girl_in_frame():
+				return "E 看看脚印" if s04_girl_face < 0 else "E 收起"
+			return "E 逗逗她" if s04_girl_face < faces.size() - 1 else "E 收起"
+		"window":
+			if s04_girl_caught and not s04_frame_installed and not (s04_uv_on and s04_win_t >= 0.5 and not s04_handle_found):
+				return "E 装上画框"
+			return "E 看看" if _s04_window_actionable() else "E 收起"
+	return "E 收起"
+
+func _s04_use_uv() -> void:
+	if not s04_girl_caught:
+		if s04_starry_repaired:
+			_show_dialogue("工作台上有一盏紫外灯。\n修复师：先别动它。先把那个人找出来。")
+		else:
+			_show_dialogue("修复师的工作台：放大镜，三种颜色的笔，一盏紫外灯。\n桌边靠着一只空画框。")
+		return
+	s04_uv_on = not s04_uv_on
+	if s04_uv_on:
+		chapter_state.mark_event(&"s04_uv_on")
+	_show_dialogue("紫外灯亮了。屋里有些东西开始发出黄绿色的光。" if s04_uv_on else "紫外灯关了。")
+
+func _hyper_flash_start(kind: String) -> void:
+	hyper_flash = kind
+	hyper_flash_left = HYPER_FLASH_TIME
+	chapter_state.mark_story_event(StringName("hyperreal_" + kind))
+
+## --- Point-light walker: the riboflavin dots, under ultraviolet in the dark ----------------------
+func _s04_point_light_on() -> bool:
+	return s04_active and s04_riboflavin_applied and s04_uv_on and s04_win_t > 0.6 and player != null
+
+func _s04_joint_now(j: int, phase: float) -> Vector2:
+	var p: Vector2 = S04_JOINTS[j]
+	var left := j % 2 == 0
+	var s := sin(phase) * (1.0 if left else -1.0)
+	match floori(j / 2.0):
+		1:
+			p += Vector2(-s * 10.0, 0)
+		2:
+			p += Vector2(-s * 22.0, -absf(s) * 4.0)
+		4:
+			p += Vector2(s * 18.0, 0)
+		5:
+			p += Vector2(s * 34.0, -maxf(0.0, s) * 14.0)
+	return p
+
+func _draw_point_light(cv: CanvasItem) -> void:
+	if not _s04_point_light_on():
+		return
+	var k := 0.16
+	var origin := player.position + Vector2(-180.0 * k, 26.0 - 400.0 * k)
+	var now := Time.get_ticks_msec() * 0.001
+	for i in range(s04_dabs.size()):
+		var d: Vector2 = s04_dabs[i]
+		var at := d
+		var best := -1
+		for j in range(S04_JOINTS.size()):
+			var joint: Vector2 = S04_JOINTS[j]
+			if joint.distance_to(d) <= S04_JOINT_REACH:
+				best = j
+				break
+		if best >= 0:
+			at = _s04_joint_now(best, s04_walk_phase) + (d - (S04_JOINTS[best] as Vector2))
+		else:
+			at = d + Vector2(sin(now * 1.7 + i) * 9.0, cos(now * 1.3 + i * 2.0) * 9.0)
+		var sp := origin + at * k
+		cv.draw_circle(sp, 6.0, Color(0.78, 1.0, 0.35, 0.18))
+		cv.draw_circle(sp, 2.6, Color(0.9, 1.0, 0.55, 0.95))
+
+## --- Drawing ---------------------------------------------------------------------------------------
+func _draw_closeup_bench(cv: CanvasItem, sz: Vector2) -> void:
+	var font := ThemeDB.fallback_font
+	var now := Time.get_ticks_msec() * 0.001
+	cv.draw_rect(Rect2(Vector2.ZERO, sz), _s04_c(Color("#3b4250")), true)
+	# 《星空下的神经》.
+	cv.draw_rect(Rect2(30, 40, 270, 260), _s04_c(Color("#b49464")), true)
+	cv.draw_rect(Rect2(46, 56, 238, 228), _s04_c(Color("#2c3a5a")), true)
+	cv.draw_arc(S04_BENCH_STARRY, 72.0, 0.0, 5.2, 40, _s04_c(Color("#c8c1a8")), 6.0)
+	cv.draw_arc(S04_BENCH_STARRY, 36.0, 1.0, 6.0, 30, _s04_c(Color("#c8c1a8")), 4.0)
+	cv.draw_circle(S04_BENCH_STARRY + Vector2(-80, -76), 7.0, _s04_c(Color("#f2e2a0")))
+	cv.draw_circle(S04_BENCH_STARRY + Vector2(86, 70), 6.0, _s04_c(Color("#f2e2a0")))
+	# The signal: a pulse running along the fibre, seen only with the corner of the eye.
+	var pts := PackedVector2Array()
+	for i in range(S04_SIGNAL_NODES.size()):
+		pts.append(_s04_bench_node(i))
+	for i in range(pts.size() - 1):
+		var mid := pts[i].lerp(pts[i + 1], 0.5)
+		cv.draw_line(pts[i], pts[i + 1], Color(0.62, 0.92, 1.0, 0.35 * _s04_bench_signal_alpha(mid)), 4.0)
+	var seg := pts.size() - 1
+	var f := fmod(now * 0.6, 1.0) * seg
+	var si := mini(int(f), seg - 1)
+	var pulse := pts[si].lerp(pts[si + 1], f - si)
+	cv.draw_circle(pulse, 9.0, Color(0.75, 0.97, 1.0, 0.9 * _s04_bench_signal_alpha(pulse)))
+	if blue_lake_active and not s04_signal_traced:
+		for i in range(pts.size()):
+			cv.draw_arc(pts[i], 16.0, 0.0, TAU, 20, Color(0.75, 0.91, 1.0, 0.25 + 0.6 * _s04_bench_signal_alpha(pts[i])), 2.0)
+	for i in range(s04_signal_progress - 1):
+		cv.draw_line(pts[i], pts[i + 1], Color("#dff5ff"), 5.0)
+	if s04_signal_progress >= 1:
+		cv.draw_circle(pts[0], 6.0, Color("#dff5ff"))
+	# The restorer, facing the painting: she only sees what is right in front of her.
+	var a := maxf(_s04_cone_alpha(), 0.25)
+	cv.draw_colored_polygon(PackedVector2Array([Vector2(392, 104), Vector2(448, 104), Vector2(420, 52)]), _s04_c(Color(0.85, 0.75, 0.55, a)))
+	cv.draw_circle(Vector2(420, 128), 28.0, _s04_c(Color(0.8, 0.66, 0.54, a)))
+	cv.draw_circle(Vector2(402, 124), 4.5, Color(0.15, 0.15, 0.2, a))
+	cv.draw_rect(Rect2(388, 158, 64, 48), _s04_c(Color(0.25, 0.45, 0.85, a)), true)
+	cv.draw_rect(Rect2(388, 206, 64, 48), _s04_c(Color(0.3, 0.7, 0.4, a)), true)
+	cv.draw_rect(Rect2(388, 254, 64, 48), _s04_c(Color(0.85, 0.3, 0.3, a)), true)
+	cv.draw_line(Vector2(390, 190), Vector2(350, 140), _s04_c(Color(0.75, 0.8, 0.85, a)), 6.0)
+	cv.draw_arc(Vector2(344, 130), 14.0, 0.0, TAU, 20, _s04_c(Color(0.75, 0.9, 1.0, a)), 3.0)
+	# Her workbench: the riboflavin, the ultraviolet lamp, 《窗》's empty frame.
+	cv.draw_rect(Rect2(466, 300, 128, 22), _s04_c(Color("#8a7a62")), true)
+	cv.draw_rect(Rect2(476, 322, 108, 60), _s04_c(Color("#665d50")), true)
+	cv.draw_rect(Rect2(530, 282, 52, 14), Color(0.6, 0.35, 1.0, 0.95) if s04_uv_on else _s04_c(Color("#5c5470")), true)
+	if s04_uv_on:
+		cv.draw_circle(Vector2(556, 289), 40.0, Color(0.55, 0.3, 1.0, 0.25))
+	if s04_has_riboflavin:
+		cv.draw_rect(Rect2(490, 268, 20, 32), _s04_c(Color("#e8c832")), true)
+		cv.draw_rect(Rect2(494, 260, 12, 8), _s04_c(Color("#6b5a3a")), true)
+	if not s04_frame_installed:
+		cv.draw_rect(Rect2(560, 180, 34, 118), _s04_c(Color("#c7a56f")), false, 6.0)
+	if s04_win_t > 0.01:
+		cv.draw_rect(Rect2(Vector2.ZERO, sz), Color(0.03, 0.05, 0.09, 0.35 * s04_win_t), true)
+	# The gaze: a soft ring around the centre of vision.
+	var g := closeup_hand
+	cv.draw_arc(g, S04_FOVEA, 0.0, TAU, 40, Color(1, 1, 1, 0.35), 2.0)
+	cv.draw_circle(g, 3.0, Color(1, 1, 1, 0.6))
+	var spot := _s04_bench_spot(g)
+	if spot == "bottle":
+		cv.draw_arc(Vector2(500, 286), 28.0, 0.0, TAU, 24, Color(1, 1, 1, 0.55), 2.0)
+	elif spot == "uv":
+		cv.draw_arc(Vector2(556, 290), 28.0, 0.0, TAU, 24, Color(1, 1, 1, 0.55), 2.0)
+	cv.draw_string(font, Vector2(sz.x * 0.5 - 110, -10), "《星空下的神经》· 修复台", HORIZONTAL_ALIGNMENT_LEFT, -1, 20, Color("#e8dfc8"))
+
+func _draw_closeup_smear(cv: CanvasItem, sz: Vector2) -> void:
+	var font := ThemeDB.fallback_font
+	cv.draw_rect(Rect2(Vector2.ZERO, sz), Color("#2a2f3a"), true)
+	# Graham, from the front: hair, face, overalls, sleeves.
+	var skin := Color("#f2c6a0")
+	cv.draw_circle(Vector2(180, 62), 34.0, skin)
+	cv.draw_arc(Vector2(180, 56), 36.0, PI * 1.05, PI * 1.95, 18, Color("#2b3547"), 14.0)
+	cv.draw_circle(Vector2(168, 64), 3.0, Color("#17202e"))
+	cv.draw_circle(Vector2(192, 64), 3.0, Color("#17202e"))
+	cv.draw_circle(Vector2(197, 70), 1.6, Color("#3a2a20"))   # the mole at the corner of her right eye
+	cv.draw_colored_polygon(PackedVector2Array([Vector2(140, 110), Vector2(220, 110), Vector2(212, 240), Vector2(148, 240)]), Color("#4b79a8"))
+	for side in [-1.0, 1.0]:
+		cv.draw_line(Vector2(180 + side * 40, 120), Vector2(180 + side * 60, 185), Color("#4b79a8"), 22.0)
+		cv.draw_line(Vector2(180 + side * 60, 185), Vector2(180 + side * 68, 245), Color("#4b79a8"), 18.0)
+		cv.draw_circle(Vector2(180 + side * 68, 252), 11.0, skin)
+		cv.draw_line(Vector2(180 + side * 25, 240), Vector2(180 + side * 30, 315), Color("#3a4a5a"), 26.0)
+		cv.draw_line(Vector2(180 + side * 30, 315), Vector2(180 + side * 32, 388), Color("#3a4a5a"), 22.0)
+		cv.draw_rect(Rect2(180 + side * 32 - 16, 388, 32, 14), Color("#2a2420"), true)
+	# The dabs of riboflavin.
+	for d in s04_dabs:
+		var dp: Vector2 = d
+		cv.draw_circle(dp, 7.0, Color(0.91, 0.78, 0.2, 0.9))
+	# The brush.
+	var b := closeup_hand
+	cv.draw_line(b, b + Vector2(36, -48), Color("#8a6a3a"), 5.0)
+	cv.draw_circle(b, 6.0, Color(0.91, 0.78, 0.2, 1.0))
+	cv.draw_string(font, Vector2(sz.x - 110, 30), "%d / %d" % [s04_dabs.size(), S04_DROPS], HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color("#e8c832"))
+	cv.draw_string(font, Vector2(sz.x * 0.5 - 50, -10), "抹核黄素", HORIZONTAL_ALIGNMENT_LEFT, -1, 20, Color("#e8dfc8"))
+
+func _draw_closeup_s04_girl(cv: CanvasItem, sz: Vector2) -> void:
+	var font := ThemeDB.fallback_font
+	cv.draw_rect(Rect2(Vector2.ZERO, sz), _s04_c(Color("#b49464")), true)
+	cv.draw_rect(Rect2(Vector2(22, 22), sz - Vector2(44, 44)), _s04_c(Color("#20242c")), true)
+	var c := Vector2(sz.x * 0.5, 170)
+	if not _s04_girl_in_frame():
+		# An empty chair, and a trail of small yellow footprints out of the frame.
+		cv.draw_rect(Rect2(c.x - 40, 230, 80, 12), _s04_c(Color("#6b4a2a")), true)
+		cv.draw_line(Vector2(c.x - 34, 242), Vector2(c.x - 34, 300), _s04_c(Color("#6b4a2a")), 6.0)
+		cv.draw_line(Vector2(c.x + 34, 242), Vector2(c.x + 34, 300), _s04_c(Color("#6b4a2a")), 6.0)
+		cv.draw_rect(Rect2(c.x - 40, 150, 10, 80), _s04_c(Color("#6b4a2a")), true)
+		for i in range(6):
+			var fp := Vector2(c.x + 10 + i * 26, 330 + (i % 2) * 14)
+			cv.draw_circle(fp, 6.0, Color(0.91, 0.78, 0.2, 0.85))
+		cv.draw_string(font, Vector2(sz.x * 0.5 - 90, -10), "《戴珍珠耳机的少女》", HORIZONTAL_ALIGNMENT_LEFT, -1, 20, Color("#e8dfc8"))
+		return
+	var face := _s04_girl_face_name()
+	var t := closeup_anim_t if closeup_anim == "face" else 1.0
+	var dusk := clampf(1.0 - absf(s04_win_t - 0.5) * 4.0, 0.0, 1.0)
+	var skin := _s04_c(Color("#e2c3a3"))
+	# Shoulders, the yellow dress.
+	cv.draw_colored_polygon(PackedVector2Array([Vector2(c.x - 90, 340), Vector2(c.x + 90, 340), Vector2(c.x + 70, 240), Vector2(c.x - 70, 240)]), _s04_c(Color("#d9b23a")))
+	var head := c + Vector2(0, -10)
+	if face == "still":
+		head += Vector2(0, -6) * t
+	cv.draw_circle(head, 62.0, skin)
+	# The blue headscarf; the earphone (the "pearl"), off in one face.
+	cv.draw_colored_polygon(PackedVector2Array([head + Vector2(-70, -10), head + Vector2(-30, -78), head + Vector2(46, -64), head + Vector2(20, -12)]), _s04_c(Color("#2f5fb8")))
+	var ear := head + Vector2(58, 18)
+	if face == "headphones":
+		ear = head + Vector2(70, 60).lerp(Vector2(58, 18), absf(sin(t * PI)))
+	cv.draw_circle(ear, 16.0, _s04_c(Color("#eeeadc")).lerp(Color(0.4, 0.75, 1.0), dusk))
+	cv.draw_arc(head + Vector2(0, -6), 64.0, PI * 1.2, PI * 1.9, 16, _s04_c(Color("#5a5a5a")), 5.0)
+	# Eyes.
+	var eye_col := _s04_c(Color("#3a2a20")).lerp(Color(0.25, 0.55, 1.0), dusk)
+	var le := head + Vector2(-22, -6)
+	var re := head + Vector2(22, -6)
+	match face:
+		"wink":
+			cv.draw_circle(le, 7.0, eye_col)
+			cv.draw_arc(re + Vector2(0, 2), 9.0, PI * 1.1, PI * 1.9, 10, eye_col, 3.0)
+		"eyeroll":
+			cv.draw_circle(le, 9.0, Color("#f4f0e6"))
+			cv.draw_circle(re, 9.0, Color("#f4f0e6"))
+			cv.draw_circle(le + Vector2(0, -5), 5.0, eye_col)
+			cv.draw_circle(re + Vector2(0, -5), 5.0, eye_col)
+		"cry":
+			cv.draw_arc(le, 8.0, PI * 0.1, PI * 0.9, 10, eye_col, 3.0)
+			cv.draw_arc(re, 8.0, PI * 0.1, PI * 0.9, 10, eye_col, 3.0)
+			var tear := Color(0.78, 1.0, 0.35, 0.9) if s04_uv_on else Color(0.7, 0.85, 1.0, 0.9)
+			cv.draw_line(le + Vector2(0, 8), le + Vector2(-2, 40 * t), tear, 3.0)
+			cv.draw_line(re + Vector2(0, 8), re + Vector2(2, 40 * t), tear, 3.0)
+		"lan":
+			cv.draw_circle(le, 9.0, eye_col)
+			cv.draw_circle(re, 9.0, eye_col)
+			cv.draw_circle(le + Vector2(-3, -3), 2.5, Color(1, 1, 1, 0.9))
+			cv.draw_circle(re + Vector2(-3, -3), 2.5, Color(1, 1, 1, 0.9))
+		_:
+			cv.draw_circle(le, 7.0, eye_col)
+			cv.draw_circle(re, 7.0, eye_col)
+	cv.draw_circle(head + Vector2(30, 6), 2.0, Color("#3a2a20"))
+	# Mouth.
+	var lips := _s04_c(Color("#c0303a")).lerp(Color(0.12, 0.1, 0.12), dusk)
+	var m := head + Vector2(4, 30)
+	match face:
+		"tongue":
+			cv.draw_circle(m, 9.0, lips)
+			cv.draw_circle(m + Vector2(0, 8 * t), 7.0, Color("#e07a8a"))
+		"pout":
+			cv.draw_circle(m + Vector2(4, 0), 7.0, lips)
+		"still":
+			cv.draw_line(m + Vector2(-10, 0), m + Vector2(10, 0), lips, 3.0)
+		"cry":
+			cv.draw_arc(m + Vector2(0, 8), 10.0, PI * 1.15, PI * 1.85, 10, lips, 3.0)
+		"lan":
+			cv.draw_arc(m, 12.0, PI * 0.15, PI * 0.85, 12, lips, 4.0)
+		"shh":
+			cv.draw_circle(m, 6.0, lips)
+			cv.draw_line(m + Vector2(0, 30), m + Vector2(0, -16), skin.darkened(0.08), 9.0)
+		_:
+			cv.draw_arc(m, 9.0, PI * 0.2, PI * 0.8, 10, lips, 4.0)
+	if face == "arms":
+		cv.draw_line(Vector2(c.x - 80, 300), Vector2(c.x + 60, 280), skin.darkened(0.05), 22.0)
+		cv.draw_line(Vector2(c.x + 80, 300), Vector2(c.x - 60, 280), skin.darkened(0.12), 22.0)
+	if s04_girl_caught and s04_uv_on and face != "cry":
+		cv.draw_line(le + Vector2(0, 8), le + Vector2(-2, 40), Color(0.78, 1.0, 0.35, 0.8), 2.0)
+		cv.draw_line(re + Vector2(0, 8), re + Vector2(2, 40), Color(0.78, 1.0, 0.35, 0.8), 2.0)
+	cv.draw_string(font, Vector2(sz.x * 0.5 - 90, -10), "《戴珍珠耳机的少女》", HORIZONTAL_ALIGNMENT_LEFT, -1, 20, Color("#e8dfc8"))
+
+func _draw_closeup_window(cv: CanvasItem, sz: Vector2) -> void:
+	var font := ThemeDB.fallback_font
+	cv.draw_rect(Rect2(Vector2.ZERO, sz), Color(0.05, 0.06, 0.08), true)
+	var pane := Rect2(60, 40, 300, 320)
+	if s04_frame_installed:
+		cv.draw_rect(pane.grow(18), _s04_c(Color("#c7a56f")), false, 24.0)
+	# Inside the painting, only a window: sky and grass.
+	cv.draw_rect(Rect2(pane.position, Vector2(pane.size.x, pane.size.y * 0.62)), _s04_c(Color("#8fc3ea")), true)
+	cv.draw_rect(Rect2(pane.position + Vector2(0, pane.size.y * 0.62), Vector2(pane.size.x, pane.size.y * 0.38)), _s04_c(Color("#6aa85a")), true)
+	cv.draw_rect(pane, Color(1.0, 0.9, 0.62, 0.2).lerp(Color(0.2, 0.25, 0.35, 0.45), s04_win_t), true)
+	cv.draw_line(Vector2(pane.get_center().x, pane.position.y), Vector2(pane.get_center().x, pane.end.y), _s04_c(Color("#8a6a4a")), 8.0)
+	cv.draw_line(Vector2(pane.position.x, pane.get_center().y - 16), Vector2(pane.end.x, pane.get_center().y - 16), _s04_c(Color("#8a6a4a")), 8.0)
+	var cover: float = 0.14 + 0.86 * s04_win_t
+	var half: float = pane.size.x * 0.5 * cover
+	cv.draw_rect(Rect2(pane.position, Vector2(half, pane.size.y)), _s04_c(Color("#8a3b3b")), true)
+	cv.draw_rect(Rect2(Vector2(pane.end.x - half, pane.position.y), Vector2(half, pane.size.y)), _s04_c(Color("#8a3b3b")), true)
+	var handle := Vector2(pane.end.x - 40, pane.get_center().y)
+	if s04_handle_found:
+		cv.draw_rect(Rect2(handle - Vector2(9, 30), Vector2(18, 60)), Color("#f6e5a7"), true)
+	elif s04_uv_on:
+		cv.draw_rect(Rect2(handle - Vector2(30, 46), Vector2(60, 92)), Color(0.78, 1.0, 0.35, 0.75), true)
+		cv.draw_rect(Rect2(handle - Vector2(9, 30), Vector2(18, 60)), Color(0.2, 0.3, 0.15, 0.8), true)
+	if s04_uv_on:
+		cv.draw_rect(Rect2(Vector2.ZERO, sz), Color(0.42, 0.22, 0.9, 0.12), true)
+		# The blind spot: LAN's blue handprint in the middle.
+		var bp := pane.get_center() + Vector2(-10, -70)
+		var blue := Color(0.0, 0.47, 0.84, 0.9)
+		cv.draw_circle(bp + Vector2(0, 18), 24.0, blue)
+		for k in range(4):
+			cv.draw_line(bp + Vector2(-18 + k * 12, 0), bp + Vector2(-24 + k * 15, -33 + absf(k - 1.5) * 6.0), blue, 9.0)
+		cv.draw_line(bp + Vector2(21, 18), bp + Vector2(39, 0), blue, 9.0)
+		if s04_girl_caught:
+			var gp := pane.get_center() + Vector2(-60, 60)
+			cv.draw_circle(gp, 16.0, Color(0.78, 1.0, 0.35, 0.6))
+	cv.draw_string(font, Vector2(sz.x * 0.5 - 30, -10), "《窗》", HORIZONTAL_ALIGNMENT_LEFT, -1, 20, Color("#e8dfc8"))
+
+func _draw_closeup_visitor(cv: CanvasItem, sz: Vector2) -> void:
+	var font := ThemeDB.fallback_font
+	var now := Time.get_ticks_msec() * 0.001
+	var rod_a := maxf(_s04_rod_alpha(), 0.3)
+	cv.draw_rect(Rect2(Vector2.ZERO, sz), Color(0.06, 0.07, 0.1), true)
+	var x := sz.x * 0.5 + sin(now * 1.3) * 4.0 * rod_a
+	var col := Color(0.49, 0.56, 0.64, rod_a)
+	cv.draw_rect(Rect2(x - 40, 170, 80, 220), col, true)
+	# A head like a stack of plates; no face.
+	for k in range(5):
+		cv.draw_rect(Rect2(x - 55 + sin(now * 0.8 + k) * 3.0, 60 + k * 20, 110, 14), Color(0.6, 0.66, 0.74, rod_a), true)
+	cv.draw_circle(Vector2(x, 120), 30.0, Color(0.7, 0.74, 0.8, rod_a * 0.3))
+	if s04_visitors_recognized:
+		cv.draw_circle(Vector2(x, 120), 14.0, Color(1.0, 0.9, 0.6, 0.7))
+		cv.draw_circle(Vector2(x, 120), 28.0, Color(1.0, 0.9, 0.6, 0.18))
+	cv.draw_string(font, Vector2(sz.x * 0.5 - 40, -10), "参观者", HORIZONTAL_ALIGNMENT_LEFT, -1, 20, Color("#e8dfc8"))
+
+func _draw_closeup_twins(cv: CanvasItem, sz: Vector2) -> void:
+	var font := ThemeDB.fallback_font
+	cv.draw_rect(Rect2(Vector2.ZERO, sz), Color(0.12, 0.13, 0.16), true)
+	cv.draw_rect(Rect2(sz.x * 0.5 - 70, 220, 140, 110), _s04_c(Color("#4b5966")), true)
+	var cone_a := _s04_cone_alpha()
+	var rod_a := _s04_rod_alpha()
+	cv.draw_circle(Vector2(sz.x * 0.5 - 40, 140), 62.0, Color(0.85, 0.62, 0.45, cone_a))
+	cv.draw_circle(Vector2(sz.x * 0.5 - 62, 132), 6.0, Color(0.2, 0.15, 0.12, cone_a))
+	cv.draw_circle(Vector2(sz.x * 0.5 + 40, 140), 62.0, Color(0.55, 0.6, 0.68, rod_a))
+	cv.draw_rect(Rect2(sz.x * 0.5 - 90, 300, 180, 26), _s04_c(Color("#c9b16a")), true)
+	if s04_uv_on:
+		cv.draw_string(font, Vector2(sz.x * 0.5 - 84, 318), "~修复师~", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(0.78, 1.0, 0.35, 0.95))
+		cv.draw_string(font, Vector2(sz.x * 0.5 + 10, 320), "~参观者~", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(0.78, 1.0, 0.35, 0.95))
+	else:
+		cv.draw_string(font, Vector2(sz.x * 0.5 - 40, 318), "共同创作", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, Color(0.2, 0.16, 0.1))
+	cv.draw_string(font, Vector2(sz.x * 0.5 - 30, -10), "《双生》", HORIZONTAL_ALIGNMENT_LEFT, -1, 20, Color("#e8dfc8"))
+
+## The door in S03, opening toward the viewer: beyond it, another Graham, from behind, pushing open
+## the far door at the same moment.
+func _draw_closeup_swap(cv: CanvasItem, sz: Vector2) -> void:
+	var t := closeup_anim_t if closeup_anim == "swap" else 1.0
+	cv.draw_rect(Rect2(Vector2.ZERO, sz), Color("#2b2620"), true)
+	var frame := Rect2(70, 50, 220, 340)
+	cv.draw_rect(frame, Color("#5a4636"), true)
+	var opening := frame.grow(-14)
+	cv.draw_rect(opening, Color(0.75, 0.8, 0.86), true)
+	# Beyond the door: the cold 里 side, and Graham from behind, pushing the far door.
+	var far := Rect2(opening.get_center() - Vector2(30, 70), Vector2(60, 140))
+	cv.draw_rect(far, Color("#6f7a80"), true)
+	var g := Vector2(opening.get_center().x, far.end.y - 4)
+	cv.draw_rect(Rect2(g + Vector2(-9, -34), Vector2(18, 28)), Color("#4b79a8"), true)
+	cv.draw_circle(g + Vector2(0, -42), 9.0, Color("#2b3547"))
+	cv.draw_line(g + Vector2(8, -28), g + Vector2(22, -40), Color("#4b79a8"), 5.0)
+	var far_open := clampf((t - 0.5) / 0.4, 0.0, 1.0)
+	cv.draw_rect(Rect2(far.position, Vector2(far.size.x * (1.0 - far_open), far.size.y)), Color("#4a535a"), true)
+	# This side's door swings toward the viewer.
+	var swing := clampf(t / 0.6, 0.0, 1.0)
+	var free_x := lerpf(opening.end.x, opening.position.x - 150.0, swing)
+	var bulge := 60.0 * swing
+	var door := PackedVector2Array([opening.position, Vector2(free_x, opening.position.y - bulge), Vector2(free_x, opening.end.y + bulge), Vector2(opening.position.x, opening.end.y)])
+	if free_x > opening.position.x + 1.0:
+		cv.draw_colored_polygon(door, Color("#7a5236"))
+	elif free_x < opening.position.x - 1.0:
+		cv.draw_colored_polygon(PackedVector2Array([door[0], door[3], door[2], door[1]]), Color("#8a6040"))
 
 func _s02_mx(x: float) -> float:
 	return 2.0 * S02_AXIS_X - x
@@ -1882,6 +3016,11 @@ func _draw_s02_water(r: Rect2, cold: bool) -> void:
 		var y := r.position.y + 2.0 + i * 3.0
 		var off := sin(t * 2.0 + i) * 4.0
 		draw_line(Vector2(r.position.x + 4 + off, y), Vector2(r.end.x - 4 + off, y), Color(0.85, 0.95, 1.0, 0.25 + (0.35 if lit else 0.0)), 1.0)
+	if not cold and s02_ripple_left > 0.0:
+		var k := 1.0 - s02_ripple_left / 6.0
+		for i in range(3):
+			var rr := fmod(k * 3.0 + i * 0.33, 1.0) * 30.0
+			draw_arc(Vector2(330, r.position.y + 2.0), rr, 0.0, PI, 12, Color(0.9, 0.97, 1.0, 0.6 * (1.0 - k)), 1.0)
 	if lit and not cold:
 		# The boy finally sees himself: his reflection, upside down in the water.
 		draw_circle(Vector2(345, r.position.y + 5.0), 3.5, Color(0.85, 0.72, 0.6, 0.7))
@@ -2221,7 +3360,7 @@ func _draw_s04_gallery() -> void:
 			while x < S04_GIRL_MAX_X:
 				draw_circle(Vector2(x, 474), 3.0, Color(0.78, 1.0, 0.35, 0.55))
 				x += 46.0
-	if s04_active and player and s04_riboflavin_applied and s04_uv_on:
+	if s04_active and player and s04_riboflavin_applied and s04_uv_on and not _s04_point_light_on():
 		draw_circle(Vector2(player.position.x, player.position.y - 4.0), 27.0, Color(0.78, 1.0, 0.35, 0.28))
 		draw_arc(Vector2(player.position.x, player.position.y - 4.0), 27.0, 0.0, TAU, 28, Color(0.85, 1.0, 0.5, 0.75), 2.0)
 
@@ -2466,6 +3605,8 @@ func _add_wall(pos: Vector2, size: Vector2) -> StaticBody2D:
 
 func _build_cursor() -> void:
 	chalk_cursor = CursorScript.new()
+	# Above the close-ups (z 50): LAN's chalk is used inside Venus's and the bench's close-ups too.
+	chalk_cursor.z_index = 100
 	add_child(chalk_cursor)
 
 func _build_transition() -> void:
@@ -2523,8 +3664,13 @@ func _hide_space_prompt() -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if not LEGACY_PROTOTYPE_FLOW_ENABLED:
-		if S01_ENABLED and s01_active and closeup != "":
-			_s01_closeup_input(event)
+		if closeup != "":
+			if s01_active:
+				_s01_closeup_input(event)
+			elif event.is_action_pressed("interact"):
+				_hall_closeup_press_e()
+			elif event.is_action_pressed("blue_lake"):
+				_hall_closeup_space()
 			return
 		if event.is_action_pressed("blue_lake"):
 			if S03_ENABLED and s03_active:
@@ -2609,6 +3755,17 @@ func _finish_blue_lake_transformation() -> void:
 func _input(event: InputEvent) -> void:
 	if not blue_lake_active or transition_started:
 		return
+	if closeup != "":
+		var mb := event as InputEventMouseButton
+		if closeup == "venus" and mb and mb.button_index == MOUSE_BUTTON_LEFT and closeup_anim == "" and not closeup_closing:
+			var local := _closeup_local(mb.position)
+			if mb.pressed:
+				_venus_grab(local)
+			else:
+				_venus_drop(local)
+		elif closeup == "bench" and mb and mb.button_index == MOUSE_BUTTON_LEFT and mb.pressed and not closeup_closing:
+			_s04_bench_chalk(_closeup_local(mb.position))
+		return
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
 		if LEGACY_PROTOTYPE_FLOW_ENABLED:
 			_try_chalk_interaction()
@@ -2665,7 +3822,7 @@ func _try_s01_interact() -> void:
 		"EntrancePhoto":
 			chapter_state.mark_event(&"s01_photo_observed")
 			_open_closeup("photo", S01_PHOTO_RECT)
-			s01_photo_hand = S01_HAND_START
+			closeup_hand = S01_HAND_START
 			_show_dialogue(_s01_photo_text())
 		"CommunityMap":
 			chapter_state.mark_event(&"s01_map_observed")
@@ -2703,26 +3860,50 @@ func _close_closeup() -> void:
 	closeup_closing = true
 
 func _closeup_kind() -> String:
-	return "clocks" if closeup.begins_with("clock") else closeup
+	if closeup.begins_with("clock"):
+		return "clocks"
+	if closeup.begins_with("lan_"):
+		return "lan"
+	return closeup
 
 func _update_closeup(delta: float) -> void:
 	if closeup_layer:
 		closeup_layer.queue_redraw()
+	s02_ripple_left = maxf(0.0, s02_ripple_left - delta)
+	hyper_flash_left = maxf(0.0, hyper_flash_left - delta)
 	if closeup == "":
 		return
 	if closeup_closing:
 		closeup_t = maxf(0.0, closeup_t - delta / CLOSEUP_OPEN_TIME)
 		if closeup_t <= 0.0:
+			var was := closeup
 			closeup = ""
 			closeup_closing = false
+			venus_drag = ""
 			if player and not s01_eyelid_closed:
 				player.input_locked = false
+			if was == "venus" and blue_lake_active:
+				blue_lake_active = false
+				chalk_cursor.set_active(false)
+				visual_mode = "Standard"
+				_update_ui()
+			if s03_mirror_line_pending:
+				s03_mirror_line_pending = false
+				_show_dialogue("房间亮了。\nLAN：镜子里有你。……对面那扇门，你的倒影够得着吗？")
 		return
 	closeup_t = minf(1.0, closeup_t + delta / CLOSEUP_OPEN_TIME)
-	# The photo is a big close-up: WASD moves Graham's hand over it.
-	if closeup == "photo" and closeup_anim == "":
+	# Big close-ups: WASD moves Graham's hand over the photo or 《那喀索斯》.
+	if closeup in ["photo", "narcissus", "bench", "smear"] and closeup_anim == "":
 		var v := Input.get_vector("move_left", "move_right", "move_up", "move_down")
-		s01_photo_hand = (s01_photo_hand + v * S01_HAND_SPEED * delta).clamp(Vector2(24, 24), Vector2(496, 356))
+		var bound: Vector2 = CLOSEUP_RECTS[closeup].size - Vector2(24, 24)
+		closeup_hand = (closeup_hand + v * S01_HAND_SPEED * delta).clamp(Vector2(24, 24), bound)
+	# 《这不是一只眼睛》: W/S lean in and back; right up close, the eyelid shows.
+	if closeup == "eye" and closeup_anim == "":
+		var lean := -Input.get_axis("move_up", "move_down")
+		s01_eye_zoom = clampf(s01_eye_zoom + lean * delta * 0.9, 0.0, 1.0)
+		if s01_eye_zoom >= 0.95 and not s01_eyelid_seen:
+			s01_eyelid_seen = true
+			_show_dialogue("凑得太近了——眼球上面，露出一片薄薄的眼皮。")
 	if closeup_anim != "":
 		var duration: float = CLOSEUP_ANIM_TIME.get(closeup_anim, 1.0)
 		closeup_anim_t = minf(1.0, closeup_anim_t + delta / duration)
@@ -2750,13 +3931,17 @@ func _s01_closeup_press_e() -> void:
 		return
 	s01_idle_time = 0.0
 	if closeup == "photo":
-		var spot := _s01_photo_spot_at(s01_photo_hand)
+		var spot := _s01_photo_spot_at(closeup_hand)
 		if spot != "":
 			_s01_photo_touch(spot)
 			return
 	if closeup == "door" and s01_has_key and not s01_gate_open:
 		_s01_play("door")
 		_show_dialogue("格雷汉把粉笔钥匙插进锁孔。")
+		return
+	if closeup == "eye" and s01_eye_zoom >= 0.95:
+		_s01_play("eyelid")
+		_show_dialogue("（你伸手，把它的眼皮拉了下来。）")
 		return
 	_close_closeup()
 
@@ -2777,7 +3962,7 @@ func _s01_closeup_anim_done(done: String) -> void:
 		"dab":
 			s01_restorer_dab = true
 			chapter_state.mark_story_event(&"s01_restorer_dab")
-			_show_dialogue("修复师转过身来，在照片的玻璃上补了一笔，又转回去看那扇门。\n……颜料还是湿的。")
+			_show_dialogue("修复师蘸着红颜料，在门前画出了一条彩带。\n……颜料还是湿的。")
 		"heads":
 			s01_visitors_turned = true
 			chapter_state.mark_story_event(&"s01_visitors_turned")
@@ -2814,14 +3999,25 @@ func _s01_closeup_anim_done(done: String) -> void:
 			closeup = ""
 			closeup_t = 0.0
 			_s01_close_eyelid()
+		"glove":
+			s03_glove_off = true
+			chapter_state.mark_event(&"s03_glove_removed")
+			closeup_closing = true
+			_s03_guard_brings_arm()
+		"mirror_pose":
+			_venus_mirror_done()
+		"swap":
+			closeup_closing = true
 
 func _s01_closeup_hint() -> String:
 	if closeup_closing or closeup_anim != "":
 		return ""
 	if closeup == "photo":
-		return "E 碰一碰　　WASD 移动手" if _s01_photo_spot_at(s01_photo_hand) != "" else "WASD 移动手　　E 收起"
+		return "E 碰一碰　　WASD 移动手" if _s01_photo_spot_at(closeup_hand) != "" else "WASD 移动手　　E 收起"
 	if closeup == "door" and s01_has_key and not s01_gate_open:
 		return "E 插钥匙"
+	if closeup == "eye":
+		return "E 拉下眼皮" if s01_eye_zoom >= 0.95 else "W/S 凑近 / 退后　　E 收起"
 	if _s01_maze_active():
 		return "WASD 沿着脑沟走　　E 收起"
 	return "E 收起"
@@ -2867,18 +4063,22 @@ func _s01_photo_touch(id: String) -> void:
 		"girl":
 			if s01_has_chalk:
 				_show_dialogue("小女孩冲你眨了眨蓝眼睛。")
+			elif not s01_ribbon_cut:
+				_show_dialogue("小女孩攥着一截粉笔，眼睛一直盯着保安手里的大剪刀。")
 			else:
 				_s01_play("chalk")
-				_show_dialogue("（你朝照片里的小女孩伸出手。）")
+				_show_dialogue("小女孩捡起断掉的彩带，转着圈玩——")
 		"guard":
-			if s01_ribbon_cut:
+			if not s01_restorer_dab:
+				_show_dialogue("保安举着一把大剪刀，好像在等着剪什么。")
+			elif s01_ribbon_cut:
 				_show_dialogue("保安把大剪刀扛在肩上，一动不动。")
 			else:
 				_s01_play("snip")
 				_show_dialogue("保安举起大剪刀——咔嚓。")
 		"restorer":
 			if s01_restorer_dab:
-				_show_dialogue("修复师又在看那扇门了。")
+				_show_dialogue("修复师退后一步，看着自己画的彩带。")
 			else:
 				_s01_play("dab")
 				_show_dialogue("你碰了碰修复师的肩膀。")
@@ -2949,7 +4149,7 @@ func _s01_maze_step(dir: Vector2i) -> void:
 
 func _s01_photo_text() -> String:
 	if s01_era == 0:
-		var t := "照片回到了真正的开幕日。大家站在红房子门前剪彩，人很多。\n保安举着大剪刀，修复师拿着画笔，参观者一直盯着门看。"
+		var t := "照片回到了真正的开幕日。大家站在红房子门前等着剪彩……可是门前没有彩带。\n保安举着大剪刀，修复师拿着画笔，参观者一直盯着门看。"
 		if s01_has_chalk:
 			return t + "\n前排的小女孩空着手，冲你笑。"
 		return t + "\n前排有个小女孩，在地上画了一团弯弯曲曲的东西。"
@@ -3029,16 +4229,12 @@ func _s01_look_at_eye() -> void:
 	s01_eye_visits += 1
 	chapter_state.mark_event(&"s01_second_exhibit_observed")
 	_open_closeup("eye", S01_EYE_RECT)
+	s01_eye_zoom = 0.0
+	s01_eyelid_seen = false
 	if s01_eye_visits == 1:
 		_show_dialogue("《这不是一只眼睛》：画面是一只眼睛，说明牌却说“这不是一只眼睛”。\n……它在看我。")
-	elif s01_eye_visits == 2:
-		_show_dialogue("它一眨不眨。\n画框的边上，好像能摸到一片薄薄的眼皮。")
 	else:
-		# Easter egg: the third look pulls the eyelid down over the close-up and the whole gallery.
-		s01_eye_visits = 1
-		closeup_anim = "eyelid"
-		closeup_anim_t = 0.0
-		_show_dialogue("（你伸手，把它的眼皮拉了下来。）")
+		_show_dialogue("它一眨不眨。")
 
 ## Easter egg: pull the eyelid shut and the whole gallery goes dark; only the clock-eyes tick.
 func _s01_close_eyelid() -> void:
@@ -3065,6 +4261,16 @@ func _s01_close_eyelid() -> void:
 	s01_eyelid_closed = false
 	player.input_locked = false
 	_show_dialogue("它又睁开了，像什么都没发生过。")
+	_unlock_achievement("ACH_S01_CLOSE_THE_EYE")
+
+## Achievements live on the game platform (Steam etc.); there is no in-game pop-up. Recorded here
+## until the platform is wired in.
+func _unlock_achievement(id: String) -> void:
+	if achievements_unlocked.has(id):
+		return
+	achievements_unlocked.append(id)
+	chapter_state.mark_story_event(StringName("achievement_" + id))
+	print("ACHIEVEMENT " + id)
 
 func _update_s01(delta: float) -> void:
 	if not s01_active or not player or scene_state != "gallery":
@@ -3145,6 +4351,7 @@ func _try_s02_interact() -> void:
 	if nearest.is_empty():
 		return
 	var object_name: String = nearest.get("name", "")
+	_hall_open_for(object_name)
 	if object_name == "SecurityGuard":
 		chapter_state.mark_event(&"s02_guard_observed")
 		chapter_state.mark_event(&"s02_guard_directed_right")
@@ -3169,6 +4376,10 @@ func _s02_describe(object_name: String) -> void:
 	elif object_name == "Narcissus":
 		if lit:
 			_show_dialogue("《那喀索斯》：画框下沿的水是真的。画灯一照，少年终于看见了水里的自己。\n对面同样的位置挂着另一幅：跪在水边的是一具骷髅。")
+		elif s03_lamp_fixed:
+			_show_dialogue("《那喀索斯》：画灯亮了。光打在水面上，又反射出去。\n画框上那盏灯，还能扳动。")
+		elif s03_active:
+			_show_dialogue("《那喀索斯》：太暗了，只看得清少年低着头。画框下沿有什么在微微晃动……是水？\n画框上伸出一盏画灯，没有亮。")
 		else:
 			_show_dialogue("《那喀索斯》：太暗了，只看得清少年低着头。\n画框下沿有什么在微微晃动……是水？")
 	elif object_name == "PictureLamp":
@@ -3278,10 +4489,11 @@ func _try_s03_interact() -> void:
 	if nearest.is_empty():
 		return
 	var object_name: String = nearest.get("name", "")
-	if object_name == "PictureLamp":
-		_s03_use_picture_lamp()
-	elif object_name == "SculptureVenus" and ((s03_left_arm_ready and not s03_left_installed) or (s03_right_arm_ready and not s03_right_installed)):
-		_s03_install_arms()
+	_hall_open_for(object_name)
+	if object_name == "SculptureVenus" and _venus_arm_waiting():
+		_show_dialogue("《机械维纳斯》：两肩的断口，等着手臂。\nLAN：按 Space，我用粉笔把手臂拖上去。")
+	elif object_name == "SculptureVenus" and s03_arms_returned and not s03_mirror_held:
+		_show_dialogue("她的两只手臂都回来了。\n……她原本是什么姿势？")
 	elif object_name == "SculptureVenus" and s03_eye_lit and not s03_mirror_held:
 		if s03_hands_seen:
 			_show_dialogue("《机械维纳斯》：没有手臂。光在她眼睛的位置交汇。\nLAN：按 Space，可以再借她的眼睛看一次。")
@@ -3294,7 +4506,7 @@ func _try_s03_interact() -> void:
 		elif s03_left_arm_ready:
 			_show_dialogue("保安捧着那条手臂，等你把它装回去。")
 		elif s03_hands_seen and not blue_lake_active:
-			_s03_guard_brings_arm()
+			_show_dialogue("保安一动不动，手一直指着对面。\n他的手套……握着的东西，不像是他自己的手。")
 		else:
 			_show_dialogue("保安一动不动，手一直指着对面。\n保安：出口在对面。")
 	elif object_name == "HallDoor":
@@ -3305,6 +4517,17 @@ func _try_s03_interact() -> void:
 	else:
 		_s02_describe(object_name)
 	queue_redraw()
+
+## E on the guard, 《那喀索斯》 or Venus opens its close-up (the door has none).
+func _hall_open_for(object_name: String) -> void:
+	match object_name:
+		"SecurityGuard":
+			var gx := s03_guard_x if s03_active else S02_GUARD_X
+			_hall_open("guard", Rect2(gx - 30, 290, 90, 110))
+		"Narcissus":
+			_hall_open("narcissus", Rect2(240, 190, 150, 125))
+		"SculptureVenus":
+			_hall_open("venus", Rect2(S02_AXIS_X - 40, 160, 80, 230))
 
 ## Where the picture lamp's light lands on the painted water for each of its angles.
 func _s03_water_hit(angle: int) -> Vector2:
@@ -3359,7 +4582,9 @@ func _s03_cross_by_reflection() -> void:
 	s03_busy = true
 	player.input_locked = true
 	chapter_state.mark_event(&"s03_crossed_by_reflection")
-	_show_dialogue("格雷汉推开门。\n镜子里，她推开的是对面那扇门。")
+	_open_closeup("swap", S02_DOOR_RECT)
+	_s01_play("swap")
+	_show_dialogue("格雷汉推开门。\n门那边，另一个她也正推开对面那扇门。")
 	await get_tree().create_timer(1.6).timeout
 	player.position.x = reflected_x
 	player.input_locked = false
@@ -3425,13 +4650,9 @@ func _s03_end_pov() -> void:
 func _s03_guard_brings_arm() -> void:
 	s03_busy = true
 	player.input_locked = true
-	s03_glove_off = true
-	chapter_state.mark_event(&"s03_glove_removed")
-	_show_dialogue("格雷汉：那不是你的手吧？\n她帮保安摘下手套。手套里是大理石。")
+	_show_dialogue("手套里是大理石。\n保安：开幕那天，她的手臂断了。馆长说，看好展品。……我就一直举着。")
 	await get_tree().create_timer(2.8).timeout
-	_show_dialogue("保安：开幕那天，她的手臂断了。馆长说，看好展品。\n……我就一直举着。")
-	await get_tree().create_timer(2.8).timeout
-	_show_dialogue("保安第一次走动。")
+	_show_dialogue("保安第一次走动。他一边走，一边活动那只举了很多年的手肘。")
 	s03_guard_walking = true
 	while s03_guard_x < S03_GUARD_AT_VENUS:
 		await get_tree().process_frame
@@ -3439,44 +4660,8 @@ func _s03_guard_brings_arm() -> void:
 	s03_guard_walking = false
 	s03_left_arm_ready = true
 	chapter_state.mark_event(&"s03_marble_arm_brought")
-	_show_dialogue("保安把手臂递到维纳斯身旁，等着。\n格雷汉：我来装。")
+	_show_dialogue("保安把手臂递到维纳斯身旁，等着。\nLAN：我来装。")
 	_s03_update_objective()
-	player.input_locked = false
-	s03_busy = false
-
-## Graham fits whichever arms have reached the middle. Both in place: Venus raises the mirror.
-func _s03_install_arms() -> void:
-	var fitted := ""
-	if s03_left_arm_ready and not s03_left_installed:
-		s03_left_installed = true
-		chapter_state.mark_event(&"s03_marble_arm_installed")
-		fitted += "格雷汉把大理石手臂接回维纳斯大理石的那一侧。"
-	if s03_right_arm_ready and not s03_right_installed:
-		s03_right_installed = true
-		chapter_state.mark_event(&"s03_iron_arm_installed")
-		if fitted != "":
-			fitted += "\n"
-		fitted += "她越过中线伸出手——指尖碰到镜子，凉的——把锈铁手臂接回锈的那一侧。"
-	if s03_left_installed and s03_right_installed:
-		s03_arms_returned = true
-		chapter_state.mark_event(&"s03_arms_returned")
-		_s03_mirror_appears(fitted)
-	else:
-		_show_dialogue(fitted + "\n" + ("另一只还在对面。" if s03_left_installed else "还差保安举着的那一只。"))
-		_s03_update_objective()
-
-func _s03_mirror_appears(fitted: String) -> void:
-	s03_busy = true
-	player.input_locked = true
-	_show_dialogue(fitted)
-	await get_tree().create_timer(2.8).timeout
-	s03_mirror_held = true
-	chapter_state.mark_event(&"s03_mirror_held")
-	chapter_state.learn(&"s03_visual_is_not_reality")
-	_show_dialogue("维纳斯托起了一面镜子。\n那面看不见的镜子，一直在等她的手。")
-	await get_tree().create_timer(2.8).timeout
-	_show_dialogue("LAN：镜子里有你。\n……对面那扇门，你的倒影够得着吗？")
-	objective_label.text = "让镜子里的你站到对面那扇门前"
 	player.input_locked = false
 	s03_busy = false
 
@@ -3520,8 +4705,10 @@ func _s03_ride_interact() -> void:
 	var n: String = item.name
 	if n == "FarDoorTag":
 		chapter_state.mark_event(&"s03_graham_tag_read")
+		_open_closeup("lan_tag", Rect2(_s02_mx(S02_DOOR_RECT.end.x), S02_DOOR_RECT.position.y, S02_DOOR_RECT.size.x, S02_DOOR_RECT.size.y))
 		_show_dialogue("LAN：门把手上挂着一张资产标签。\n“No.0779 修理工 格雷汉·斯蒂尔”。")
 	elif n == "SkeletonPainting":
+		_open_closeup("lan_skull", Rect2(_s02_mx(S02_NARCISSUS_RECT.end.x), S02_NARCISSUS_RECT.position.y, S02_NARCISSUS_RECT.size.x, S02_NARCISSUS_RECT.size.y))
 		_show_dialogue("LAN：骷髅也在看水。\n它的水里映着的，是那个少年。")
 	elif n == "BonsaiPot":
 		s03_pot_on_belt = true
@@ -3560,7 +4747,7 @@ func _update_s03(delta: float) -> void:
 			and not blue_lake_active and s02_figure_alpha >= 0.95 \
 			and absf(_s02_mx(player.position.x) - _s02_mx(S02_DOOR_RECT.get_center().x)) <= 30.0:
 		_s03_start_ride()
-	if s03_ride_active:
+	if s03_ride_active and closeup == "":
 		s03_ride_x -= S03_RIDE_SPEED * delta
 		if s03_ride_x <= S02_AXIS_X + 24.0:
 			_s03_end_ride()
@@ -3615,11 +4802,25 @@ func _update_s04(delta: float) -> void:
 		if s04_girl_out and s04_window != "cone":
 			s04_girl_frozen = false
 			_s04_walk_girl(delta)
+	if player:
+		s04_walk_phase += absf(player.velocity.x) * delta * 0.045
+		player.modulate.a = 0.25 if _s04_point_light_on() else 1.0
+	if s04_uv_on and s04_riboflavin_applied and not s04_fluor_shown:
+		s04_fluor_shown = true
+		_hyper_flash_start("fluor")
 	if not s04_visitors_recognized and s04_win_t > 0.9 and s04_uv_on and s04_riboflavin_applied and player and absf(player.velocity.x) > 30.0:
+		var near := false
 		for vx in S04_VISITOR_XS:
 			if absf(player.position.x - vx) < 70.0:
-				_s04_recognized()
+				near = true
 				break
+		if near and _s04_joint_hits() >= S04_RECOGNISE_JOINTS:
+			_s04_recognized()
+		elif near and not s04_firefly_said:
+			s04_firefly_said = true
+			_show_dialogue("参观者：几个光点在飘……是萤火虫吗？\nLAN：他们认得的是走路的样子。点要抹在会动的地方。")
+		elif not near:
+			s04_firefly_said = false
 
 func _s04_walk_girl(delta: float) -> void:
 	if s04_girl_pause > 0.0:
@@ -3656,6 +4857,8 @@ func _s04_next_line() -> void:
 func _s04_update_objective() -> void:
 	if s04_girl_caught:
 		var left: Array[String] = []
+		if not s04_riboflavin_applied:
+			left.append("在身上抹核黄素")
 		if not s04_visitors_recognized:
 			left.append("让参观者认出你")
 		if not s04_handle_found:
@@ -3686,7 +4889,16 @@ func _try_s04_interact() -> void:
 	var object_name: String = nearest.get("name", "")
 	match object_name:
 		"Visitor", "VisitorGroup":
+			var vx: float = nearest.position.x
+			_open_closeup("visitor", Rect2(vx - 30, 290, 60, 110))
 			_s04_talk_to_visitors()
+		"Bench":
+			_open_closeup("bench", Rect2(300, 220, 240, 160))
+			closeup_hand = Vector2(470, 150)
+			if s04_starry_repaired:
+				_show_dialogue("修复台。修复师又埋头修画了。")
+			else:
+				_show_dialogue("修复台。修复师盯着《星空下的神经》，背对着你。\n……她看得见你吗？")
 		"Restorer":
 			_s04_talk_to_restorer()
 		"RestorerSide":
@@ -3697,6 +4909,7 @@ func _try_s04_interact() -> void:
 		"Workbench":
 			_s04_use_bench()
 		"Window":
+			_open_closeup("window", Rect2(S05_WINDOW_CENTER - Vector2(45, 50), Vector2(90, 100)))
 			_s04_look_at_window()
 		"StarryNerves":
 			if s04_starry_repaired:
@@ -3706,8 +4919,11 @@ func _try_s04_interact() -> void:
 			else:
 				_show_dialogue("正对着看，什么也没有。\n……眼角好像有东西在动。")
 		"PearlHeadphones":
+			_open_closeup("girl", Rect2(S04_GIRL_FRAME_X - 45, 225, 90, 90))
+			s04_girl_face = -1
 			_s04_look_at_girl()
 		"SculptureTwins":
+			_open_closeup("twins", Rect2(S04_TWINS_X - 25, 290, 50, 80))
 			if s04_uv_on:
 				_show_dialogue("紫外灯下，说明牌上显出两个签名。\n一个是修复师的笔迹，另一个……是参观者的。")
 			elif s04_win_t < 0.25:
@@ -3796,7 +5012,7 @@ func _s04_look_at_window() -> void:
 		_s04_check_complete()
 	elif s04_uv_on and not chapter_state.has_event(&"s04_blue_handprint_seen"):
 		chapter_state.mark_event(&"s04_blue_handprint_seen")
-		_show_dialogue("紫外灯下，《窗》的正中间有一个蓝色的手印。\n比少女的手大。……一直在那里，只是谁也没看见。")
+		_show_dialogue("紫外灯下，《窗》的正中间有一个蓝色的手印。比少女的手大。\nLAN（小声）：……那是我的。")
 	elif s04_girl_caught and not s04_frame_installed:
 		s04_frame_installed = true
 		chapter_state.mark_event(&"s04_window_frame_installed")
@@ -3824,24 +5040,31 @@ func _s04_look_at_girl() -> void:
 
 func _try_s04_chalk_interaction() -> void:
 	if chalk_hover_target.begins_with("Signal"):
-		var index := int(chalk_hover_target.substr(6))
-		if index != s04_signal_progress:
-			_show_dialogue("LAN：不对，信号不是从这里开始的。\n顺着它流的方向描。")
-			return
-		s04_signal_progress += 1
-		if s04_signal_progress < S04_SIGNAL_NODES.size():
-			_show_dialogue("LAN：……接着描。")
-		else:
-			s04_signal_traced = true
-			chapter_state.mark_event(&"s04_signal_traced")
-			if s04_window == "mid":
-				_s04_repair_starry()
-			else:
-				_show_dialogue("LAN：线描好了。\n可是太暗，修复师看不见。")
-		queue_redraw()
+		_s04_trace(int(chalk_hover_target.substr(6)))
 		return
 	if chalk_hover_target != "S04Window":
 		return
+	_s04_pull_curtain()
+
+func _s04_trace(index: int) -> void:
+	if s04_signal_traced:
+		return
+	if index != s04_signal_progress:
+		_show_dialogue("LAN：不对，信号不是从这里开始的。\n顺着它流的方向描。")
+		return
+	s04_signal_progress += 1
+	if s04_signal_progress < S04_SIGNAL_NODES.size():
+		_show_dialogue("LAN：……接着描。")
+	else:
+		s04_signal_traced = true
+		chapter_state.mark_event(&"s04_signal_traced")
+		if s04_window == "mid":
+			_s04_repair_starry()
+		else:
+			_show_dialogue("LAN：线描好了。\n可是太暗，修复师看不见。")
+	queue_redraw()
+
+func _s04_pull_curtain() -> void:
 	var next: String = S04_PRESETS[(S04_PRESETS.find(s04_window) + 1) % S04_PRESETS.size()]
 	s04_window = next
 	chapter_state.mark_event(StringName("s04_window_" + next))
@@ -3853,6 +5076,9 @@ func _try_s04_chalk_interaction() -> void:
 		"rod":
 			_show_dialogue("LAN：全合。灰的、暗的……可是有东西在动。")
 	if next == "cone" and s04_girl_out and not s04_girl_caught:
+		if not s04_freeze_flash_done:
+			s04_freeze_flash_done = true
+			_hyper_flash_start("painted_eye")
 		if absf(s04_girl_x - S04_RESTORER_FRONT) <= S04_CATCH_RANGE:
 			_s04_catch_girl()
 		else:
@@ -3900,6 +5126,12 @@ func _s04_check_complete() -> void:
 
 func _s04_finish() -> void:
 	s04_finish_pending = false
+	if closeup != "":
+		closeup = ""
+		closeup_t = 0.0
+		closeup_anim = ""
+	player.input_locked = false
+	player.modulate.a = 1.0
 	chapter_state.mark_event(&"s04_window_unblocked")
 	chapter_state.learn(&"s04_seeing_is_not_objective")
 	chapter_state.complete_slice(ChapterState.Slice.S04_VISITOR)
@@ -5639,6 +6871,16 @@ func _update_interaction_hint() -> void:
 		if interaction_hint_label:
 			interaction_hint_label.hide()
 		return
+	if closeup != "":
+		var closeup_hint := _s01_closeup_hint() if s01_active else _hall_closeup_hint()
+		if closeup_hint == "":
+			interaction_hint_label.hide()
+		else:
+			var shown: Rect2 = CLOSEUP_RECTS[_closeup_kind()]
+			interaction_hint_label.text = closeup_hint
+			interaction_hint_label.position = Vector2(shown.get_center().x - 7.0 * closeup_hint.length(), shown.end.y + 8.0)
+			interaction_hint_label.show()
+		return
 	if blue_lake_active:
 		if chalk_hover_target == "":
 			interaction_hint_label.hide()
@@ -5658,16 +6900,6 @@ func _update_interaction_hint() -> void:
 		else:
 			interaction_hint_label.text = "E 推" if ride_item.name == "BonsaiPot" else "E 看"
 			interaction_hint_label.position = Vector2(s03_ride_x - 20.0, 398.0)
-			interaction_hint_label.show()
-		return
-	if s01_active and closeup != "":
-		var closeup_hint := _s01_closeup_hint()
-		if closeup_hint == "":
-			interaction_hint_label.hide()
-		else:
-			var shown: Rect2 = CLOSEUP_RECTS[_closeup_kind()]
-			interaction_hint_label.text = closeup_hint
-			interaction_hint_label.position = Vector2(shown.get_center().x - 7.0 * closeup_hint.length(), shown.end.y + 8.0)
 			interaction_hint_label.show()
 		return
 	if space_prompt_visible:
@@ -5694,12 +6926,8 @@ func _update_interaction_hint() -> void:
 			interaction_hint_label.text = "E 拿出粉笔"
 	if s03_active:
 		var n3: String = nearest.get("name", "")
-		if n3 == "PictureLamp" and not s03_eye_lit:
-			interaction_hint_label.text = "E 调角度" if s03_lamp_fixed else "E 修灯"
-		elif n3 == "SecurityGuard" and s03_hands_seen and not s03_glove_off:
-			interaction_hint_label.text = "E 那不是你的手吧"
-		elif n3 == "SculptureVenus" and ((s03_left_arm_ready and not s03_left_installed) or (s03_right_arm_ready and not s03_right_installed)):
-			interaction_hint_label.text = "E 装上手臂"
+		if n3 == "SculptureVenus" and _venus_arm_waiting():
+			interaction_hint_label.text = "E 装手臂"
 		elif n3 == "HallDoor" and s03_mirror_held and not s03_crossed:
 			interaction_hint_label.text = "E 推门"
 	if s05_active or s06_active or s07_active or s08_active:
@@ -5735,6 +6963,8 @@ func _update_interaction_hint() -> void:
 func _update_chalk_hover() -> void:
 	var previous := chalk_hover_target
 	chalk_hover_target = ""
+	if closeup != "":
+		return
 	if not blue_lake_active or scene_state != "gallery" or transition_started:
 		if previous != "":
 			queue_redraw()
