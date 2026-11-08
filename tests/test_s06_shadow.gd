@@ -28,7 +28,8 @@ func _setup_s06() -> void:
 func _setup_s07() -> void:
 	await _setup_s06()
 	main.s06_lamp_on = true
-	main.s06_pieces = main.S06_PIECE_CORRECT.duplicate()
+	for piece in main.S06_PIECES:
+		main.s06_pieces[piece] = main._s06_piece_target(piece)
 	main.s06_shadow_done = true
 	main.s06_case_clean = true
 	main.s06_sensor_revealed = true
@@ -45,49 +46,82 @@ func _run() -> void:
 	await _drain()
 	await _press("blue_lake")
 	await _frames(2)
-	_check(not main.blue_lake_active, "Space before the lamp is on does nothing")
+	_check(not main.blue_lake_active and main.dialogue_label.text.contains("灯"), "Space before the lamp is on: LAN asks for the lamp")
 	# Imitation hint: up close the giant cleaner reaches the top of the rack for the card.
 	await _talk_cleaner(0.92)
 	_check(main.s06_has_card, "the giant cleaner fetches case 5's card from the top of the rack")
 	await _drain()
+	await _close()
 	await _e_at("Rack")
-	_check(main.s05_view == "card", "E the rack: the card with the silhouette")
+	_check(main.closeup == "rack" and main.dialogue_label.text.contains("卡片"), "the rack close-up: the card with the silhouette pinned on it")
+	await _wait(0.4)
 	await _shot("s06_0_card")
-	await _e_at("Lamp")
-	_check(main.s06_lamp_on, "E turns the floor lamp on")
+	await _close()
+	# The pile, from just behind the lamp: E switches it on, Space hands LAN's chalk, the chalk drags.
+	await _e_at("Pile")
+	_check(main.closeup == "pile", "the pile close-up")
+	await _wait(0.35)
+	_check(main.interaction_hint_label.text == "E 开灯", "E turns the lamp on (%s)" % main.interaction_hint_label.text)
+	await _press("interact")
+	await _wait(0.7)
+	_check(main.s06_lamp_on, "the lamp is on")
 	await _shot("s06_1_messy_shadow")
 	await _press("blue_lake")
-	await main.blue_lake_transform.finished
 	await _frames(2)
-	_check(main.blue_lake_active, "Space: Blue Lake")
-	main.chalk_hover_target = "Piece_head"
-	main._try_s06_chalk_interaction()
-	main.chalk_hover_target = "Piece_head"
-	main._try_s06_chalk_interaction()
-	_check(main.s06_pieces["head"] == main.S06_PIECE_CORRECT["head"] and main.dialogue_label.text.contains("对上了"), "a piece in the right slot snaps (feedback)")
-	for piece in main.S06_PIECES:
-		var guard := 0
-		while main.s06_pieces[piece] != main.S06_PIECE_CORRECT[piece] and guard < 3:
-			main.chalk_hover_target = "Piece_" + piece
-			main._try_s06_chalk_interaction()
-			guard += 1
-	_check(main.s06_shadow_done, "the shadow is Kent")
-	await _shot("s06_2_kent_shadow")
+	_check(main.blue_lake_active, "Space in the close-up: LAN's chalk")
+	# A wrong place: the shadow moves but does not settle.
+	main._s06_grab(main.s06_pieces["body"])
+	_check(main.s06_drag == "body", "the chalk picks up the eyeball")
+	main._s06_drop(Vector2(200, 300))
+	_check(not main._s06_piece_ok("body") and main.s06_pieces["body"] == Vector2(200, 300), "dropped in a wrong place, it stays there")
+	# The right places: each settles, its shadow lit; the last one makes Kent.
+	for piece in ["head", "legs_l", "eyes", "legs_r", "body"]:
+		main._s06_grab(main.s06_pieces[piece])
+		main._s06_drop(main._s06_piece_target(piece) + Vector2(3, 2))
+		_check(main._s06_piece_ok(piece), "%s settles where its shadow belongs" % piece)
+		if piece == "eyes":
+			await _shot("s06_1b_half_done")
+	_check(main.closeup_anim == "kent", "all five: the shadow becomes Kent")
+	await _wait(1.0)
+	_check(main._s01_hyper_now().size() == 2 and main._s01_hyper_now()[0] == "spider", "a hyper-real insert: a jumping spider's main eyes")
+	await _shot("s06_1c_hyperreal_spider")
+	await _wait(1.6)
+	_check(main.s06_shadow_done and not main.blue_lake_active, "the shadow is Kent; the chalk is put away")
 	await _drain()
+	await _close()
+	await _shot("s06_2_kent_shadow")
 	await _talk_cleaner(main.S05_FOOTPRINTS_Z)
-	_check(not main.s06_case_clean and main.dialogue_label.text.contains("小一点"), "normal size: too big to get into the fifth case")
+	_check(main.s06_wipe_t < 0.0 and main.dialogue_label.text.contains("小一点"), "normal size: too big to get into the fifth case")
+	await _close()
 	await _talk_cleaner(0.15)
-	_check(main.s06_case_clean, "from far he is tiny, climbs into the fifth case and wipes it from inside")
+	_check(main.s06_wipe_t >= 0.0 and not main.s06_case_clean, "from far he is tiny and climbs into the fifth case")
+	await _drain()
+	await _close()
+	await _e_at("Rack")
+	_check(main.dialogue_label.text.contains("擦玻璃"), "the rack close-up: the tiny cleaner wiping the case from inside")
+	await _wait(1.0)
+	await _shot("s06_2b_wiping_inside")
+	await _close()
+	await _wait(main.S06_WIPE_TIME)
+	_check(main.s06_case_clean and main.s06_wipe_t < 0.0, "he comes out; the case is clean")
 	await _drain()
 	await _e_at("Rack")
-	_check(main.dialogue_label.text.contains("Space"), "E the rack: clean but unreadable, press Space")
+	_check(main.dialogue_label.text.contains("Space"), "the rack: clean but unreadable, press Space")
+	await _wait(0.35)
 	await _press("blue_lake")
 	await _frames(2)
-	main.chalk_hover_target = "SensorCase"
-	main._try_s06_chalk_interaction()
-	_check(main.s06_sensor_revealed, "Chalk on the case: the sensor shows")
+	_check(main.blue_lake_active, "Space in the rack close-up: LAN's chalk")
+	main._s06_rack_chalk(main.SENSOR_CASE.position + Vector2(8, 8))
+	_check(main.dialogue_label.text.contains("只是灰"), "a wrong spot: only grey")
+	for i in range(8):
+		main._s06_rack_chalk(main._sensor_lens_at(i) + Vector2(2, -2))
+		if i == 3:
+			await _shot("s06_2c_marking_lenses")
+	_check(main.s06_sensor_revealed, "all eight lenses marked: the sensor shows")
+	await _wait(0.3)
 	await _shot("s06_3_sensor")
 	await _drain()
+	await _close()
 	await _wait(main.S04_LINE_TIME + 0.5)
 	_check(main.s07_active, "S06 complete -> S07")
 	_finish("S06")
@@ -168,3 +202,38 @@ func _talk_cleaner(z: float) -> void:
 	var nearest: Dictionary = main._get_nearest_interactable()
 	_check(nearest.get("name", "") == "Cleaner", "at z=%.2f E targets the cleaner (got %s)" % [z, nearest.get("name", "<nothing>")])
 	await _press("interact")
+	_check(main.closeup == "cleaner", "E opens the cleaner's close-up")
+	await _wait(0.35)
+	# The hand starts on him: E talks.
+	await _press("interact")
+
+func _close() -> void:
+	# In a big close-up E acts on what is under the hand: move it off first.
+	if main.closeup == "cleaner":
+		await _hand_to(Vector2(380, 40))
+	elif main.closeup == "narcissus":
+		await _hand_to(Vector2(300, 200))
+	await _wait(0.35)
+	await _press("interact")
+	await _wait(0.45)
+	_check(main.closeup == "", "close-up closed (%s)" % main.closeup)
+
+func _hand_to(target: Vector2) -> void:
+	for i in range(600):
+		var d: Vector2 = target - main.closeup_hand
+		if d.length() < 5.0:
+			break
+		_hold_if("move_right", d.x > 3.0)
+		_hold_if("move_left", d.x < -3.0)
+		_hold_if("move_down", d.y > 3.0)
+		_hold_if("move_up", d.y < -3.0)
+		await process_frame
+	for a in ["move_right", "move_left", "move_down", "move_up"]:
+		Input.action_release(a)
+	await _frames(2)
+
+func _hold_if(action: String, on: bool) -> void:
+	if on:
+		Input.action_press(action)
+	else:
+		Input.action_release(action)

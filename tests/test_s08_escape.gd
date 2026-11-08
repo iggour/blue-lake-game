@@ -28,7 +28,8 @@ func _setup_s06() -> void:
 func _setup_s07() -> void:
 	await _setup_s06()
 	main.s06_lamp_on = true
-	main.s06_pieces = main.S06_PIECE_CORRECT.duplicate()
+	for piece in main.S06_PIECES:
+		main.s06_pieces[piece] = main._s06_piece_target(piece)
 	main.s06_shadow_done = true
 	main.s06_case_clean = true
 	main.s06_sensor_revealed = true
@@ -42,28 +43,54 @@ func _setup_s07() -> void:
 func _run() -> void:
 	await _setup_s07()
 	await _e_at("Rack")
-	await _e_at("Rack")
-	_check(main.s08_active and main.s08_stolen, "second E takes the sensor -> S08")
+	await _wait(0.4)
+	await _press("interact")
+	await _wait(1.2)
+	_check(main.s07_hesitated, "first E in the rack close-up: hesitation")
+	await _press("interact")
+	_check(main.closeup_anim == "take", "second E: the glass door opens")
+	await _wait(1.0)
+	_check(main._s01_hyper_now().size() == 2 and main._s01_hyper_now()[0] == "aperture", "a hyper-real insert: the lenses' apertures closing on her hand")
+	await _shot("s08_0_hyperreal_aperture")
+	await _wait(1.8)
+	_check(main.closeup == "" and not main.player.input_locked, "the close-up is gone; she can run")
+	_check(main.s08_active and main.s08_stolen, "she takes the sensor -> S08")
 	_check(main.chapter_state.is_slice_completed(ChapterState.Slice.S07_RETURN), "S07 complete")
 	await _wait(0.8)
 	_check(main.s08_run < 1.0, "standing still: the circle does not close")
-	# Run back and forth; the circle closes with the distance run.
+	_check(main.s08_mouse_on and main.dialogue_label.text.contains("鼠贼"), "the guard kicks the bucket; the mouse behind it bolts")
+	await _shot("s08_0b_mouse_bolts")
+	# Running away from the mouse: the circle holds.
+	main.player.position = Vector2(main._s05_px(150, 0.05), main._s05_y(0.05))
+	await _frames(2)
+	Input.action_press("move_up")
+	for f in range(10):
+		await physics_frame
+	var r0: float = main.s08_run
+	for f in range(30):
+		await physics_frame
+	Input.action_release("move_up")
+	_check(main.s08_run == r0 and r0 < 1.0, "running, but not after the mouse: the circle does not close (%.0f)" % main.s08_run)
+	# Following it: the circle closes with the distance run.
 	var closest := 99999.0
 	var half_shot := false
-	for i in range(14):
-		var action := "move_left" if i % 2 == 0 else "move_right"
-		Input.action_press(action)
-		for f in range(30):
-			await physics_frame
-			if main.s08_active and main.scene_state == "gallery":
-				closest = minf(closest, main.s08_guard.distance_to(main.player.position))
-		Input.action_release(action)
+	for f in range(1800):
+		var d: Vector2 = main._s08_mouse_screen() - main.player.position
+		_hold_if("move_right", d.x > 18.0)
+		_hold_if("move_left", d.x < -18.0)
+		_hold_if("move_down", d.y > 8.0)
+		_hold_if("move_up", d.y < -8.0)
+		await physics_frame
+		if main.s08_active and main.scene_state == "gallery":
+			closest = minf(closest, main.s08_guard.distance_to(main.player.position))
 		if not half_shot and main.s08_run > main.S08_RUN_TOTAL * 0.5:
 			half_shot = true
 			_check(main._s08_iris_radius() < 500.0, "half-way: the circle has closed in")
 			await _shot("s08_1_iris")
 		if main.s08_black_time >= 0.0 or main.scene_state == "theater":
 			break
+	for a in ["move_right", "move_left", "move_down", "move_up"]:
+		Input.action_release(a)
 	_check(closest >= main.S08_GUARD_REACH - 10.0, "the guard never reaches her (closest %.0f)" % closest)
 	_check(main.s08_exit_started, "the circle closes completely")
 	await _wait(0.3)
@@ -156,3 +183,33 @@ func _talk_cleaner(z: float) -> void:
 	var nearest: Dictionary = main._get_nearest_interactable()
 	_check(nearest.get("name", "") == "Cleaner", "at z=%.2f E targets the cleaner (got %s)" % [z, nearest.get("name", "<nothing>")])
 	await _press("interact")
+	_check(main.closeup == "cleaner", "E opens the cleaner's close-up")
+	await _wait(0.35)
+	# The hand starts on him: E talks.
+	await _press("interact")
+
+func _close() -> void:
+	await _wait(0.35)
+	await _press("interact")
+	await _wait(0.45)
+	_check(main.closeup == "", "close-up closed (%s)" % main.closeup)
+
+func _hand_to(target: Vector2) -> void:
+	for i in range(600):
+		var d: Vector2 = target - main.closeup_hand
+		if d.length() < 5.0:
+			break
+		_hold_if("move_right", d.x > 3.0)
+		_hold_if("move_left", d.x < -3.0)
+		_hold_if("move_down", d.y > 3.0)
+		_hold_if("move_up", d.y < -3.0)
+		await process_frame
+	for a in ["move_right", "move_left", "move_down", "move_up"]:
+		Input.action_release(a)
+	await _frames(2)
+
+func _hold_if(action: String, on: bool) -> void:
+	if on:
+		Input.action_press(action)
+	else:
+		Input.action_release(action)

@@ -150,25 +150,53 @@ func _run() -> void:
 	await _wait(0.45)
 	await _close()
 
+	# The white mouse: at dusk both apples of 《双生》 show, and it comes out to gnaw them.
+	await _chalk("S04Window")   # mid
+	await _wait(0.5)
+	_check(main.s04_mouse == "eating", "dusk: both apples show and the mouse gnaws them (%s)" % main.s04_mouse)
+	await _shot("s04_6b2_mouse_apples")
+	await _press_e_at("SculptureTwins")
+	_check(main.closeup == "twins" and main.dialogue_label.text.contains("小白鼠"), "《双生》 close-up: a red and a green apple, and the mouse")
+	await _wait(0.4)
+	_check(main.interaction_hint_label.text == "E 碰碰老鼠", "E startles it (%s)" % main.interaction_hint_label.text)
+	await _press_action("interact")
+	_check(main.s04_mouse == "fleeing", "startled, it runs for the bench")
+	await _wait(0.6)
+	_check(main.closeup == "", "the close-up puts itself away to show it run")
+	await _wait(2.2)
+	_check(main.s04_mouse == "bottle" and main.dialogue_label.text.contains("尾巴"), "it dives into the riboflavin bottle; its tail sticks out")
+	await _chalk("S04Window")   # rod
+	await _chalk("S04Window")   # cone
+
 	# Riboflavin: Graham dabs it on herself. On the joints it moves the way she walks.
 	await _press_action("blue_lake")
 	await _frames(2)
 	_check(not main.blue_lake_active, "Space: Blue Lake put away")
 	await _press_e_at("Bench")
 	await _gaze(Vector2(500, 286))
+	_check(main.interaction_hint_label.text == "E 揪住尾巴", "the tail out of the bottle (%s)" % main.interaction_hint_label.text)
+	await _press_action("interact")
+	_check(main.closeup_anim == "tail", "E pulls it out by the tail")
+	await _wait(1.3)
+	await _shot("s04_6b3_mouse_joints")
+	await _wait(1.2)
+	_check(main.s04_mouse == "running" and main.dialogue_label.text.contains("关节"), "it shakes the paint off except in its joints, and runs off to the visitors")
 	_check(main.interaction_hint_label.text == "E 拿起核黄素", "the bottle on the bench (%s)" % main.interaction_hint_label.text)
 	await _press_action("interact")
 	_check(main.closeup == "smear", "the riboflavin close-up: Graham's front")
 	await _wait(0.4)
-	for k in range(10):
+	_check(main.S04_DROPS == 4, "four drops of riboflavin: hands and feet, like the mouse")
+	# A drop near a joint settles on it.
+	main.closeup_hand = (main.S04_JOINTS[4] as Vector2) + Vector2(14, -10)
+	await _press_action("interact")
+	_check(main.s04_dabs[0] == main.S04_JOINTS[4], "a drop near a wrist lands on the wrist")
+	for k in [5, 10]:
 		main.closeup_hand = main.S04_JOINTS[k]
 		await _press_action("interact")
-	main.closeup_hand = Vector2(180, 180)
-	await _press_action("interact")
 	await _shot("s04_6c_dabs")
-	main.closeup_hand = Vector2(170, 60)
+	main.closeup_hand = main.S04_JOINTS[11]
 	await _press_action("interact")
-	_check(main.s04_riboflavin_applied and main._s04_joint_hits() == 10, "twelve drops, ten on joints (%d)" % main._s04_joint_hits())
+	_check(main.s04_riboflavin_applied and main._s04_joint_hits() == 4, "four drops, on both hands and both feet (%d)" % main._s04_joint_hits())
 	await _wait(0.5)
 	_check(main.closeup == "", "the close-up closes after the last drop")
 	await _press_e_at("Bench")
@@ -196,6 +224,7 @@ func _run() -> void:
 	await _press_action("blue_lake")
 	await _wait(0.6)
 	_check(main.s04_win_t > 0.9 and main._s04_point_light_on(), "dark + UV: Graham is a point-light walker")
+	_check(main.s04_mouse == "pacing" and main.s04_mouse_seen, "in the dark the visitors see the mouse's dots run, and know it for a mouse")
 
 	# The visitors see only movement: standing still in front of them does nothing.
 	await _press_e_at("VisitorGroup")

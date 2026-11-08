@@ -2,6 +2,8 @@ extends SceneTree
 
 ## S05: open 《窗》 and walk into the sensor hall behind it (with depth), meet the cleaner,
 ## get the old lens cleaned and focused, and see that the chart's last cell is not empty.
+## The hall's things are close-ups: the eyepiece (A/D slide the lens), the cleaner with his bucket
+## (WASD hand), the rack, the pile, the mural.
 ##
 ## Headless:      "$G" --headless --path . --script tests/test_s05_window.gd
 ## With a window: "$G" --path . --script tests/test_s05_window.gd   (screenshots -> .artifacts/screenshots/)
@@ -59,53 +61,89 @@ func _run() -> void:
 	await _hold("move_down", 20)
 	_check(main.player.position.y > y0 + 20.0 and main.player.scale.x > 0.6, "nearer, Graham is bigger (scale %.2f)" % main.player.scale.x)
 
+	# Five close-ups instead of twelve E points: the lens, the lamp, the bucket and the plinths are not E points.
+	for inert in ["Lens", "Lamp", "Bucket", "Plinth_s01"]:
+		await _stand_at(inert)
+		var nearest: Dictionary = main._get_nearest_s05_interactable()
+		_check(nearest.get("name", "") != inert, "%s is no longer an E point of its own" % inert)
 	await _e_at("Eyepiece")
-	_check(main.s05_view == "lens" and main.dialogue_label.text.contains("白雾"), "eyepiece before cleaning: fogged")
+	_check(main.closeup == "eyepiece" and main.dialogue_label.text.contains("白雾"), "the eyepiece close-up: fogged")
+	_check(main.interaction_hint_label.text.contains("A/D"), "A/D slides the lens (%s)" % main.interaction_hint_label.text)
 	await _shot("s05_4_fogged")
-	await _e_at("Bucket")
-	_check(main.dialogue_label.text.contains("楼下"), "the bucket leaked to the floor below (《那喀索斯》's water)")
+	await _close()
 	await _e_at("Mural")
-	_check(main.dialogue_label.text.contains("美术馆") and main.dialogue_label.text.contains("窗"), "the red house (with windows) is the museum")
+	_check(main.closeup == "mural" and main.dialogue_label.text.contains("美术馆") and main.dialogue_label.text.contains("窗"), "the mural close-up: the red house (with windows) is the museum")
+	await _shot("s05_4b_mural")
+	await _close()
 	await _e_at("Pile")
-	_check(main.dialogue_label.text.contains("搬了下来"), "the exhibits were taken off the rack and piled up")
+	_check(main.closeup == "pile" and main.dialogue_label.text.contains("搬了下来"), "the pile close-up: the exhibits were taken off the rack")
+	await _close()
 	await _e_at("Rack")
-	_check(main.dialogue_label.text.contains("空着"), "the rack is empty except the fogged case")
-	await _e_at("Plinth_s01")
-	_check(main.dialogue_label.text.contains("左上"), "an empty plinth points at a window of the red house")
-
+	_check(main.closeup == "rack" and main.dialogue_label.text.contains("空着"), "the rack close-up: the last row is empty except the fogged case")
+	_check(not main.dialogue_label.text.contains("透明点"), "no clear spots in the fog yet")
+	await _close()
 	# The cleaner: tiny from far, a giant up close, normal only from the footprints.
-	await _talk_cleaner(0.15)
-	_check(main._s05_cleaner_size() == "tiny" and not main.s05_cleaner_met and main.dialogue_label.text.contains("脚印"), "from far he is tiny and can't see her; Blue Lake points at the footprints")
+	await _cleaner_closeup(0.15)
+	_check(main.dialogue_label.text.contains("扣子"), "from far he looks tiny")
 	await _shot("s05_5_cleaner_tiny")
-	await _talk_cleaner(0.92)
-	_check(main._s05_cleaner_size() == "giant" and not main.s05_cleaner_met, "up close he is a giant and can't see her")
+	await _press("interact")
+	_check(not main.s05_cleaner_met and main.dialogue_label.text.contains("脚印"), "tiny, he can't see her; LAN points at the footprints")
+	await _close()
+	await _cleaner_closeup(0.92)
+	_check(main.dialogue_label.text.contains("鞋"), "up close only his shoe fits in the picture")
 	await _shot("s05_5b_cleaner_giant")
-	await _talk_cleaner(main.S05_FOOTPRINTS_Z)
+	await _press("interact")
+	_check(not main.s05_cleaner_met, "a giant can't see her either")
+	await _close()
+	await _cleaner_closeup(main.S05_FOOTPRINTS_Z)
+	_check(main.interaction_hint_label.text == "E 说话", "the hand starts on him (%s)" % main.interaction_hint_label.text)
+	await _press("interact")
 	_check(main._s05_cleaner_size() == "normal" and main.s05_cleaner_met, "from the footprints he is normal size and talks")
 	await _shot("s05_6_cleaner")
 	await _drain()
-
-	# Push the lens down the rail into the marked cleaning zone; the dialogue counts the notches left.
-	await _e_at("Lens", -0.12)
-	_check(main.s05_lens_notch == 3 and main.dialogue_label.text.contains("还有 1 格"), "pushing tells how many notches are left to the cleaning zone")
-	await _e_at("Lens", -0.12)
-	_check(main.s05_lens_notch == main.S05_CLEAN_NOTCH, "lens in the cleaning zone (notch %d)" % main.s05_lens_notch)
-	_check(main.s05_lens_clean, "in the cleaning zone, the cleaner sees the lens and cleans it")
-	await _drain()
+	# The bucket: 《那喀索斯》's water. The boy looks up out of it; touching it breaks his face.
+	await _hand_to(main.BUCKET_SPOT)
+	_check(main.interaction_hint_label.text.contains("水"), "the hand over the bucket (%s)" % main.interaction_hint_label.text)
+	await _press("interact")
+	_check(main.dialogue_label.text.contains("那喀索斯") and main.dialogue_label.text.contains("楼下"), "the boy downstairs looks up out of the bucket")
+	await _press("interact")
+	_check(main.closeup_anim == "ripple", "E touches the water: a ripple")
+	await _seconds(0.5)
+	await _shot("s05_6b_bucket_ripple")
+	await _seconds(1.1)
+	await _close()
+	# The eyepiece: A/D slide the lens. No counting of notches; the scale and the blur say it.
 	await _e_at("Eyepiece")
-	_check(not main.s05_cell_seen and main.dialogue_label.text.contains("回拉 3 格"), "clean but out of focus: says which way and how far")
-	for i in range(3):
-		await _e_at("Lens", 0.12)
-	_check(main.s05_lens_notch == main.S05_FOCUS_NOTCH, "lens pulled back into focus")
-	await _e_at("Eyepiece")
-	_check(main.s05_cell_seen, "in focus: the last cell is not empty")
+	await _seconds(0.35)
+	await _press("move_right")
+	_check(main.s05_lens_notch == 3 and not main.dialogue_label.text.contains("格"), "D pushes the lens one notch, without counting what is left")
+	await _press("move_right")
+	_check(main.s05_lens_notch == main.S05_CLEAN_NOTCH and main.closeup_anim == "sponge", "in the cleaning zone the cleaner's sponge comes across the view")
+	await _seconds(0.9)
+	_check(main._s01_hyper_now().size() == 2 and main._s01_hyper_now()[0] == "sponge", "a hyper-real insert: the wet sponge on the lens")
+	await _shot("s05_6c_hyperreal_sponge")
+	await _seconds(1.7)
+	_check(main.s05_lens_clean and main.closeup == "eyepiece", "the lens is clean; still looking")
+	await _press("move_left")
+	await _press("move_left")
+	_check(not main.s05_cell_seen, "two notches back: still blurred")
+	await _shot("s05_6d_blurred")
+	await _press("move_left")
+	_check(main.s05_lens_notch == main.S05_FOCUS_NOTCH and main.s05_cell_seen, "in focus: the last cell is not empty")
+	await _seconds(0.4)
 	await _shot("s05_7_eight_lenses")
 	await _drain()
+	await _close()
 	await create_timer(main.S04_LINE_TIME + 0.5).timeout
 	_check(main.chapter_state.is_slice_completed(ChapterState.Slice.S05_WINDOW), "S05 complete")
 	_check(main.s06_active, "hands on to S06")
 	_check(main.s05_room == "hall" and main.player.ground_top == main.S05_PAINT_TOP_Y, "S06 continues in the same hall, depth still on")
-
+	# What was seen through the eyepiece shows on the case: eight clear spots in the fog.
+	await _drain()
+	await _e_at("Rack")
+	_check(main.dialogue_label.text.contains("透明点"), "the fifth case now has eight clear spots in its fog")
+	await _shot("s05_8_breath_spots")
+	await _close()
 	if failures.is_empty():
 		print("TEST PASS: S05")
 		quit(0)
@@ -118,11 +156,47 @@ func _stand_cleaner(z: float) -> void:
 	main.player.position = Vector2(main._s05_px(main.S05_CLEANER_X, z), main._s05_y(z))
 	await _frames(2)
 
-func _talk_cleaner(z: float) -> void:
+func _cleaner_closeup(z: float) -> void:
 	await _stand_cleaner(z)
 	var nearest: Dictionary = main._get_nearest_interactable()
 	_check(nearest.get("name", "") == "Cleaner", "at z=%.2f E targets the cleaner (got %s)" % [z, nearest.get("name", "<nothing>")])
 	await _press("interact")
+	_check(main.closeup == "cleaner", "E opens the cleaner's close-up")
+	await _seconds(0.35)
+
+func _close() -> void:
+	# In a big close-up E acts on what is under the hand: move it off first.
+	if main.closeup == "cleaner":
+		await _hand_to(Vector2(380, 40))
+	elif main.closeup == "narcissus":
+		await _hand_to(Vector2(300, 200))
+	await _seconds(0.35)
+	await _press("interact")
+	await _seconds(0.45)
+	_check(main.closeup == "", "close-up closed")
+
+func _seconds(t: float) -> void:
+	await create_timer(t).timeout
+
+func _hand_to(target: Vector2) -> void:
+	for i in range(600):
+		var d: Vector2 = target - main.closeup_hand
+		if d.length() < 5.0:
+			break
+		_hold_if("move_right", d.x > 3.0)
+		_hold_if("move_left", d.x < -3.0)
+		_hold_if("move_down", d.y > 3.0)
+		_hold_if("move_up", d.y < -3.0)
+		await process_frame
+	for a in ["move_right", "move_left", "move_down", "move_up"]:
+		Input.action_release(a)
+	await _frames(2)
+
+func _hold_if(action: String, on: bool) -> void:
+	if on:
+		Input.action_press(action)
+	else:
+		Input.action_release(action)
 
 func _stand_at(item_name: String, dz: float = 0.0) -> void:
 	var item: Dictionary = main._s05_item(item_name)

@@ -16,7 +16,7 @@ mkdir -p .artifacts
     echo "== headless $t =="
     "$G" --headless --path . --script "$t" 2>&1 | grep -E "TEST PASS|TEST FAIL|SCRIPT ERROR|ERROR|Invalid" | head -40
   done
-  for t in tests/test_s01_enter.gd tests/test_s01_future.gd tests/test_s02_lost.gd tests/test_s03_mirror.gd tests/test_s04_visitor.gd; do
+  for t in tests/test_s01_enter.gd tests/test_s01_future.gd tests/test_s02_lost.gd tests/test_s03_mirror.gd tests/test_s04_visitor.gd tests/test_s05_window.gd tests/test_s06_shadow.gd tests/test_s07_red_house.gd tests/test_s08_escape.gd; do
     echo "== windowed $t =="
     "$G" --path . --script "$t" 2>&1 | grep -E "TEST PASS|TEST FAIL|SCRIPT ERROR|ERROR|Invalid" | head -40
   done
