@@ -3,7 +3,7 @@ extends SceneTree
 ## no ID is written twice, and IDs nobody uses are listed (warning only).
 
 const DialogueScript = preload("res://scripts/dialogue_script.gd")
-const ID_IN_CODE := "\"((?:s0[1-8]|hall|common|legacy|sign)\\.[a-z0-9_]+(?:\\.[a-z0-9_]+)*)\""
+const ID_IN_CODE := "\"((?:s0[1-8]|hall|common|legacy|sign|goal|hint)\\.[a-z0-9_]+(?:\\.[a-z0-9_]+)*)\""
 
 func _initialize() -> void:
 	var failures: Array[String] = []

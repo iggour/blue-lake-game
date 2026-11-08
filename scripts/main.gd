@@ -443,7 +443,7 @@ func _ready() -> void:
 		tutorial_timer.timeout.connect(_hide_tutorial)
 	else:
 		_show_dialogue(_t("s01.arrive.01"))
-		objective_label.text = "WASD / 方向键：移动"
+		objective_label.text = _t("goal.s01.01")
 		chapter_state.set_blue_lake_state(&"uninitialized")
 		chapter_state.set_map_state(&"Museum_S01_Initial")
 		chapter_state.mark_story_event(&"s01_started")
@@ -510,7 +510,7 @@ func _build_ui() -> void:
 	objective_label = Label.new()
 	objective_label.position = Vector2(24, 608)
 	objective_label.add_theme_color_override("font_color", Color("#b3c4d6"))
-	objective_label.text = "WASD / 方向键：移动    E：互动"
+	objective_label.text = _t("goal.s01.02")
 	layer.add_child(objective_label)
 	interaction_hint_label = Label.new()
 	interaction_hint_label.position = Vector2.ZERO
@@ -519,7 +519,7 @@ func _build_ui() -> void:
 	interaction_hint_label.add_theme_constant_override("shadow_offset_x", 2)
 	interaction_hint_label.add_theme_constant_override("shadow_offset_y", 2)
 	interaction_hint_label.add_theme_font_size_override("font_size", 15)
-	interaction_hint_label.text = "E 互动"
+	interaction_hint_label.text = _t("hint.general.01")
 	interaction_hint_label.hide()
 	layer.add_child(interaction_hint_label)
 	dialogue_label = Label.new()
@@ -2009,21 +2009,21 @@ func _hall_closeup_hint() -> String:
 	if closeup_closing or closeup_anim != "":
 		return ""
 	if s04_active:
-		return "E 继续" if not s04_lines.is_empty() else _s04_closeup_hint()
+		return _t("hint.shared.01") if not s04_lines.is_empty() else _s04_closeup_hint()
 	if _sensor_hall():
-		return "E 继续" if not s05_lines.is_empty() else _sensor_closeup_hint()
+		return _t("hint.shared.01") if not s05_lines.is_empty() else _sensor_closeup_hint()
 	match closeup:
 		"guard":
 			if s03_active and s03_hands_seen and not s03_glove_off and not blue_lake_active:
-				return "E 那不是你的手吧"
+				return _t("hint.s02.01")
 		"narcissus":
-			return "E 碰一碰　　WASD 移动手" if _narc_spot_at(closeup_hand) != "" else "WASD 移动手　　E 收起"
+			return _t("hint.shared.02") if _narc_spot_at(closeup_hand) != "" else _t("hint.shared.03")
 		"venus":
 			if _venus_arm_waiting():
-				return "左键拖动手臂　　Space 收起粉笔" if blue_lake_active else "Space 拿出粉笔　　E 收起"
+				return _t("hint.s02.02") if blue_lake_active else _t("hint.shared.04")
 			if s03_arms_returned and not s03_mirror_held:
-				return "E 换个姿势"
-	return "E 收起"
+				return _t("hint.s02.03")
+	return _t("hint.shared.05")
 
 ## Space in the Venus close-up: LAN's chalk drags her arms onto her shoulders. Before that (her eye
 ## just lit), Space puts the close-up away and borrows her eye in the hall as before.
@@ -2096,7 +2096,7 @@ func _venus_install(side: String) -> void:
 		chalk_cursor.set_active(false)
 		visual_mode = "Standard"
 		venus_pose = -1
-		objective_label.text = "让维纳斯摆出她原本的姿势"
+		objective_label.text = _t("goal.s03.01")
 		_show_dialogue(_t("s03.venus.10"))
 		_update_ui()
 	else:
@@ -2120,7 +2120,7 @@ func _venus_mirror_done() -> void:
 	chapter_state.mark_event(&"s03_mirror_held")
 	chapter_state.learn(&"s03_visual_is_not_reality")
 	s03_mirror_line_pending = true
-	objective_label.text = "让镜子里的你站到对面那扇门前"
+	objective_label.text = _t("goal.s03.02")
 	_show_dialogue(_t("s03.venus.12"))
 
 ## The arms (elbow, hand) for the current pose, eased from the previous one while a pose plays.
@@ -2577,34 +2577,34 @@ func _s04_closeup_hint() -> String:
 	match closeup:
 		"bench":
 			if blue_lake_active:
-				return "左键 描信号　　Space 收起粉笔"
+				return _t("hint.s04.01")
 			match _s04_bench_spot(closeup_hand):
 				"front":
-					return "E 说话"
+					return _t("hint.shared.06")
 				"side":
-					return "E 拍拍她"
+					return _t("hint.s04.02")
 				"bottle":
 					if s04_mouse == "bottle":
-						return "E 揪住尾巴"
-					return "E 擦掉重抹" if s04_riboflavin_applied else "E 拿起核黄素"
+						return _t("hint.s04.03")
+					return _t("hint.s04.04") if s04_riboflavin_applied else _t("hint.s04.05")
 				"uv":
-					return "E 关紫外灯" if s04_uv_on else "E 开紫外灯"
-			return "WASD 移动视线　　E 收起"
+					return _t("hint.s04.06") if s04_uv_on else _t("hint.s04.07")
+			return _t("hint.s04.08")
 		"smear":
-			return "WASD 移动刷子　　E 抹一滴（还剩 %d 滴）" % (S04_DROPS - s04_dabs.size())
+			return _t("hint.s04.smear", {"n": S04_DROPS - s04_dabs.size()})
 		"girl":
 			var faces: Array = S04_GIRL_FACES[_s04_girl_phase()]
 			if not _s04_girl_in_frame():
-				return "E 看看脚印" if s04_girl_face < 0 else "E 收起"
-			return "E 逗逗她" if s04_girl_face < faces.size() - 1 else "E 收起"
+				return _t("hint.s04.09") if s04_girl_face < 0 else _t("hint.shared.05")
+			return _t("hint.s04.10") if s04_girl_face < faces.size() - 1 else _t("hint.shared.05")
 		"twins":
 			if s04_mouse == "eating":
-				return "E 碰碰老鼠"
+				return _t("hint.s04.11")
 		"window":
 			if s04_girl_caught and not s04_frame_installed and not (s04_uv_on and s04_win_t >= 0.5 and not s04_handle_found):
-				return "E 装上画框"
-			return "E 看看" if _s04_window_actionable() else "E 收起"
-	return "E 收起"
+				return _t("hint.s04.12")
+			return _t("hint.s04.13") if _s04_window_actionable() else _t("hint.shared.05")
+	return _t("hint.shared.05")
 
 func _s04_use_uv() -> void:
 	if not s04_girl_caught:
@@ -3818,7 +3818,7 @@ func _show_space_prompt() -> void:
 	if not interaction_hint_label:
 		return
 	space_prompt_visible = true
-	interaction_hint_label.text = "SPACE  使用蓝湖"
+	interaction_hint_label.text = _t("hint.general.02")
 	interaction_hint_label.position = Vector2(500, 455)
 	interaction_hint_label.show()
 	var prompt_timer := get_tree().create_timer(4.0)
@@ -4190,14 +4190,14 @@ func _s01_closeup_hint() -> String:
 	if closeup_closing or closeup_anim != "":
 		return ""
 	if closeup == "photo":
-		return "E 碰一碰　　WASD 移动手" if _s01_photo_spot_at(closeup_hand) != "" else "WASD 移动手　　E 收起"
+		return _t("hint.shared.02") if _s01_photo_spot_at(closeup_hand) != "" else _t("hint.shared.03")
 	if closeup == "door" and s01_has_key and not s01_gate_open:
-		return "E 插钥匙"
+		return _t("hint.s01.01")
 	if closeup == "eye":
-		return "E 拉下眼皮" if s01_eye_zoom >= 0.95 else "W/S 凑近 / 退后　　E 收起"
+		return _t("hint.s01.02") if s01_eye_zoom >= 0.95 else _t("hint.s01.03")
 	if _s01_maze_active():
-		return "WASD 沿着脑沟走　　E 收起"
-	return "E 收起"
+		return _t("hint.s01.04")
+	return _t("hint.shared.05")
 
 ## --- The people in 《美术馆开幕日》 ----------------------------------------------------------
 ## The photo is a big close-up: Graham's hand moves over it (WASD) and E touches whoever is under it.
@@ -4495,7 +4495,7 @@ func _complete_s01(route: String) -> void:
 		_show_dialogue(_t("s01.exit.01"))
 	else:
 		_show_dialogue(_t("s01.exit.02"))
-	objective_label.text = "我要出去。"
+	objective_label.text = _t("goal.s01.03")
 	_update_ui()
 	queue_redraw()
 
@@ -4515,7 +4515,7 @@ func _enter_s02_after_s01() -> void:
 	chapter_state.mark_story_event(&"s02_started")
 	# Through the S01 door Graham arrives at this hall's entrance, on the left.
 	player.position.x = 120.0
-	objective_label.text = "继续探索美术馆"
+	objective_label.text = _t("goal.s02.01")
 	_show_dialogue(_t("s02.enter.01"))
 	_update_ui()
 	queue_redraw()
@@ -4587,7 +4587,7 @@ func _complete_s02_counterpart() -> void:
 	chapter_state.learn(&"s02_space_has_a_problem")
 	chapter_state.set_player_goal(&"understand_the_space")
 	chapter_state.complete_slice(ChapterState.Slice.S02_LOST)
-	objective_label.text = "这里的空间有问题。"
+	objective_label.text = _t("goal.s02.02")
 	_update_ui()
 	_enter_s03_after_s02()
 
@@ -4616,7 +4616,7 @@ func _update_s02(delta: float) -> void:
 		if not s02_belt_stalled and x >= S02_STALL_X and Input.is_action_pressed("move_right"):
 			s02_belt_stalled = true
 			chapter_state.mark_event(&"s02_belt_stalled")
-			objective_label.text = "出口在对面……可是过不去。"
+			objective_label.text = _t("goal.s02.03")
 			_show_dialogue(_t("s02.belt.01"))
 		if s02_belt_stalled and not s02_carried_back and x <= S02_BELT_START + 12.0 and not Input.is_action_pressed("move_left"):
 			s02_carried_back = true
@@ -4728,7 +4728,7 @@ func _s03_use_picture_lamp() -> void:
 		s03_lamp_angle = 0
 		chapter_state.mark_event(&"s03_picture_lamp_fixed")
 		_show_dialogue(_t("s03.lamp.02"))
-		objective_label.text = "调整画灯的角度"
+		objective_label.text = _t("goal.s03.03")
 		return
 	s03_lamp_angle = (s03_lamp_angle + 1) % S03_WATER_HITS.size()
 	var end := _s03_reflection_end(s03_lamp_angle)
@@ -4753,7 +4753,7 @@ func _s03_light_the_eye() -> void:
 	s03_eye_lit = true
 	s03_busy = true
 	chapter_state.mark_event(&"s03_venus_eye_lit")
-	objective_label.text = "借维纳斯的眼睛（Space）"
+	objective_label.text = _t("goal.s03.04")
 	_show_dialogue(_t("s03.lamp.05"))
 	_show_space_prompt()
 	await get_tree().create_timer(0.6).timeout
@@ -4775,7 +4775,7 @@ func _s03_cross_by_reflection() -> void:
 	player.position.x = reflected_x
 	player.input_locked = false
 	s03_busy = false
-	objective_label.text = "从对面那扇门出去"
+	objective_label.text = _t("goal.s03.05")
 	_show_dialogue(_t("s03.cross.04"))
 
 func _try_toggle_s03_blue_lake() -> void:
@@ -4854,15 +4854,14 @@ func _s03_guard_brings_arm() -> void:
 func _s03_update_objective() -> void:
 	if s03_mirror_held:
 		return
-	var need: Array[String] = []
-	if not s03_left_arm_ready:
-		need.append("保安举着的那只")
-	if not s03_right_arm_ready:
-		need.append("对面那盆树里的那只")
-	if need.is_empty():
-		objective_label.text = "在维纳斯身边装上手臂"
+	if s03_left_arm_ready and s03_right_arm_ready:
+		objective_label.text = _t("goal.s03.arms_install")
+	elif not s03_left_arm_ready and not s03_right_arm_ready:
+		objective_label.text = _t("goal.s03.arms_both")
+	elif not s03_left_arm_ready:
+		objective_label.text = _t("goal.s03.arms_guard")
 	else:
-		objective_label.text = "把手臂带回维纳斯身边：" + "、".join(need)
+		objective_label.text = _t("goal.s03.arms_bonsai")
 
 ## Things on the 里 side that Blue Lake can reach while the belt carries it (x, radius).
 func _s03_ride_items() -> Array[Dictionary]:
@@ -5052,22 +5051,22 @@ func _s04_update_objective() -> void:
 	if s04_girl_caught:
 		var left: Array[String] = []
 		if not s04_riboflavin_applied:
-			left.append("在身上抹核黄素")
+			left.append(_t("goal.s04.left_smear"))
 		if not s04_visitors_recognized:
-			left.append("让参观者认出你")
+			left.append(_t("goal.s04.left_recognized"))
 		if not s04_handle_found:
-			left.append("找到《窗》的把手")
+			left.append(_t("goal.s04.left_handle"))
 		if not s04_frame_installed:
-			left.append("把画框装回《窗》")
-		objective_label.text = "、".join(left) if not left.is_empty() else "《窗》"
+			left.append(_t("goal.s04.left_frame"))
+		objective_label.text = "、".join(left) if not left.is_empty() else _t("goal.s04.window")
 	elif s04_starry_repaired:
-		objective_label.text = "抓住在画上乱涂的人（要让修复师看见）"
+		objective_label.text = _t("goal.s04.01")
 	elif s04_restorer_met:
-		objective_label.text = "帮修复师看见画里的信号"
+		objective_label.text = _t("goal.s04.02")
 	elif s04_window_seen:
-		objective_label.text = "用蓝湖拉《窗》的窗帘"
+		objective_label.text = _t("goal.s04.03")
 	else:
-		objective_label.text = "这间屋子的光从哪里来？"
+		objective_label.text = _t("goal.s04.04")
 
 func _try_s04_interact() -> void:
 	if not s04_active or scene_state != "gallery" or transition_started:
@@ -5334,7 +5333,7 @@ func _s04_finish() -> void:
 	chapter_state.mark_event(&"s04_window_unblocked")
 	chapter_state.learn(&"s04_seeing_is_not_objective")
 	chapter_state.complete_slice(ChapterState.Slice.S04_VISITOR)
-	objective_label.text = "调查《窗》"
+	objective_label.text = _t("goal.s05.01")
 	_enter_s05_after_s04()
 
 ## ===== The sensor hall (S05–S08) ===============================================================
@@ -5830,7 +5829,7 @@ func _s05_enter_hall() -> void:
 	player.input_locked = false
 	chapter_state.set_map_state(&"Museum_S05_SensorHall")
 	chapter_state.set_player_goal(&"explore_the_sensor_hall")
-	objective_label.text = "S：顺着路往下走，走出画   W / S：走远、走近"
+	objective_label.text = _t("goal.s05.02")
 	s05_labeled = true
 	chapter_state.mark_event(&"s05_labeled_by_cleaner")
 	_s05_say([
@@ -5863,7 +5862,7 @@ func _s05_talk_to_cleaner() -> void:
 	if not s05_cleaner_met:
 		s05_cleaner_met = true
 		chapter_state.mark_event(&"s05_cleaner_met")
-		objective_label.text = "帮清洁工看清视力表的最后一行"
+		objective_label.text = _t("goal.s05.03")
 		_s05_say([
 			_t("s05.cleaner.01"),
 			_t("s05.cleaner.02"),
@@ -5982,7 +5981,7 @@ func _enter_s06_after_s05() -> void:
 	chapter_state.set_map_state(&"Museum_S06_SensorHall_Shadow")
 	chapter_state.set_player_goal(&"see_what_the_cleaner_cannot")
 	chapter_state.mark_story_event(&"s06_started")
-	objective_label.text = "让清洁工看见第五格"
+	objective_label.text = _t("goal.s06.01")
 	_hall_say([
 		_t("s06.enter.01"),
 		_t("s06.enter.02")
@@ -6073,7 +6072,7 @@ func _s06_shadow_complete() -> void:
 func _s06_cleaner_climbs_in() -> void:
 	s06_wipe_t = 0.0
 	chapter_state.mark_event(&"s06_cleaner_climbed_in")
-	objective_label.text = "小小的清洁工在第五格里擦玻璃"
+	objective_label.text = _t("goal.s06.02")
 	_hall_say([
 		_t("s06.wipe.01"),
 		_t("s06.wipe.02")
@@ -6164,7 +6163,7 @@ func _enter_s07_after_s06() -> void:
 	chapter_state.set_map_state(&"Museum_S07_RedHouse")
 	chapter_state.set_player_goal(&"reobserve_old_areas")
 	chapter_state.mark_story_event(&"s07_started")
-	objective_label.text = "拿走传感器 · （可选）四个空展台，四扇窗"
+	objective_label.text = _t("goal.s07.01")
 	_hall_say([
 		_t("s07.enter.01"),
 		_t("s07.enter.02")
@@ -6258,7 +6257,7 @@ func _s07_find(room: String) -> void:
 	s07_found[room] = true
 	chapter_state.mark_event(StringName("s07_found_" + room))
 	if room != "hall":
-		objective_label.text = "Space，用粉笔点这里的“窗”，回展厅"
+		objective_label.text = _t("goal.s07.02")
 
 ## Back in the hall, the cleaner numbers and shelves what Graham found, with a remark.
 func _s07_shelve_new() -> void:
@@ -6326,7 +6325,7 @@ func _s08_steal() -> void:
 	chapter_state.set_map_state(&"Museum_S08_Escape")
 	chapter_state.set_player_goal(&"escape")
 	chapter_state.mark_story_event(&"s08_started")
-	objective_label.text = "跑！"
+	objective_label.text = _t("goal.s08.01")
 	_show_dialogue(_t("s08.run.01"))
 	_update_ui()
 	queue_redraw()
@@ -6463,7 +6462,7 @@ func _try_s05_chalk_interaction() -> void:
 	chapter_state.learn(&"s05_blue_lake_can_change_the_world")
 	chapter_state.set_player_goal(&"understand_the_window")
 	_show_dialogue(_t("s05.lake.03"))
-	objective_label.text = "《窗》打开了。"
+	objective_label.text = _t("goal.s05.04")
 	player.input_locked = true
 	s05_enter_anim = 0.0
 	_update_ui()
@@ -6494,7 +6493,7 @@ func _enter_s05_after_s04() -> void:
 	chapter_state.set_map_state(&"Museum_S05_Window")
 	chapter_state.set_player_goal(&"find_the_window")
 	chapter_state.mark_story_event(&"s05_started")
-	objective_label.text = "打开《窗》：Space，再用粉笔点它"
+	objective_label.text = _t("goal.s05.05")
 	_show_dialogue(_t("s05.enter.01"))
 	_show_space_prompt()
 	_update_ui()
@@ -6556,7 +6555,7 @@ func _enter_s04_after_s03() -> void:
 	chapter_state.set_map_state(&"Museum_S04_Visitor")
 	chapter_state.set_player_goal(&"recognize_the_visitor")
 	chapter_state.mark_story_event(&"s04_started")
-	objective_label.text = "这间屋子的光从哪里来？"
+	objective_label.text = _t("goal.s04.04")
 	_show_dialogue(_t("s04.enter.01"))
 	_update_ui()
 	queue_redraw()
@@ -6603,7 +6602,7 @@ func _enter_s03_after_s02() -> void:
 	chapter_state.set_map_state(&"Museum_S03_Mirror")
 	chapter_state.set_player_goal(&"find_the_light")
 	chapter_state.mark_story_event(&"s03_started")
-	objective_label.text = "找到光"
+	objective_label.text = _t("goal.s03.06")
 	_show_dialogue(_t("s03.enter.01"))
 	_update_ui()
 	queue_redraw()
@@ -6749,7 +6748,7 @@ func _finish_transition() -> void:
 		chapter_state.mark_story_event(&"s08_escaped_with_kents_eyes")
 		chapter_state.mark_story_event(&"theater_entered")
 		chapter_state.complete_slice(ChapterState.Slice.S08_TRUE_EXIT)
-		objective_label.text = "真理美术馆 · 完"
+		objective_label.text = _t("goal.s08.02")
 		_show_dialogue(_t("s08.theater.01"))
 	else:
 		_show_dialogue(_t("legacy.flow.19"))
@@ -6852,11 +6851,11 @@ func _update_interaction_hint() -> void:
 		if chalk_hover_target == "":
 			interaction_hint_label.hide()
 			return
-		interaction_hint_label.text = "左键 使用蓝湖"
+		interaction_hint_label.text = _t("hint.general.03")
 		if s04_active:
-			interaction_hint_label.text = "左键 拉窗帘" if chalk_hover_target == "S04Window" else ("左键 碰碰老鼠" if chalk_hover_target == "S04Mouse" else "左键 描")
+			interaction_hint_label.text = _t("hint.s04.14") if chalk_hover_target == "S04Window" else (_t("hint.s04.15") if chalk_hover_target == "S04Mouse" else _t("hint.s04.16"))
 		elif s05_active and chalk_hover_target == "Window":
-			interaction_hint_label.text = "左键 打开《窗》"
+			interaction_hint_label.text = _t("hint.s05.01")
 		interaction_hint_label.position = get_viewport().get_mouse_position() + Vector2(14, -22)
 		interaction_hint_label.show()
 		return
@@ -6865,12 +6864,12 @@ func _update_interaction_hint() -> void:
 		if ride_item.is_empty():
 			interaction_hint_label.hide()
 		else:
-			interaction_hint_label.text = "E 推" if ride_item.name == "BonsaiPot" else "E 看"
+			interaction_hint_label.text = _t("hint.s02.04") if ride_item.name == "BonsaiPot" else _t("hint.shared.07")
 			interaction_hint_label.position = Vector2(s03_ride_x - 20.0, 398.0)
 			interaction_hint_label.show()
 		return
 	if space_prompt_visible:
-		interaction_hint_label.text = "SPACE  使用蓝湖"
+		interaction_hint_label.text = _t("hint.general.02")
 		interaction_hint_label.position = Vector2(500, 455)
 		interaction_hint_label.show()
 		return
@@ -6878,43 +6877,43 @@ func _update_interaction_hint() -> void:
 	if nearest.is_empty():
 		interaction_hint_label.hide()
 		return
-	interaction_hint_label.text = "E 观察"
+	interaction_hint_label.text = _t("hint.general.04")
 	if s01_active:
 		var n: String = nearest.get("name", "")
 		if s01_clocks_seen and n == "ClockBack":
-			interaction_hint_label.text = "E 往回拨"
+			interaction_hint_label.text = _t("hint.s01.05")
 		elif s01_clocks_seen and n == "ClockForward":
-			interaction_hint_label.text = "E 往前拨"
+			interaction_hint_label.text = _t("hint.s01.06")
 		elif n == "ExitDoor" and s01_gate_open:
-			interaction_hint_label.text = "E 进门"
+			interaction_hint_label.text = _t("hint.s01.07")
 		elif n == "ExitDoor" and s01_has_key:
-			interaction_hint_label.text = "E 开门"
+			interaction_hint_label.text = _t("hint.s01.08")
 		elif n == "CommunityMap" and s01_has_chalk and not s01_has_key:
-			interaction_hint_label.text = "E 拿出粉笔"
+			interaction_hint_label.text = _t("hint.s01.09")
 	if s03_active:
 		var n3: String = nearest.get("name", "")
 		if n3 == "SculptureVenus" and _venus_arm_waiting():
-			interaction_hint_label.text = "E 装手臂"
+			interaction_hint_label.text = _t("hint.s02.05")
 		elif n3 == "HallDoor" and s03_mirror_held and not s03_crossed:
-			interaction_hint_label.text = "E 推门"
+			interaction_hint_label.text = _t("hint.s02.06")
 	if s05_active or s06_active or s07_active or s08_active:
 		var n5: String = nearest.get("name", "")
 		if not s05_lines.is_empty():
-			interaction_hint_label.text = "E 继续"
+			interaction_hint_label.text = _t("hint.shared.01")
 		elif n5 == "Eyepiece":
-			interaction_hint_label.text = "E 看"
+			interaction_hint_label.text = _t("hint.shared.07")
 	if s04_active:
 		var n4: String = nearest.get("name", "")
 		if not s04_lines.is_empty():
-			interaction_hint_label.text = "E 继续"
+			interaction_hint_label.text = _t("hint.shared.01")
 		elif n4 in ["Restorer", "Visitor", "VisitorGroup"]:
-			interaction_hint_label.text = "E 说话"
+			interaction_hint_label.text = _t("hint.shared.06")
 		elif n4 == "Workbench" and s04_has_riboflavin and not s04_riboflavin_applied:
-			interaction_hint_label.text = "E 抹上核黄素"
+			interaction_hint_label.text = _t("hint.s04.17")
 		elif n4 == "Workbench" and s04_girl_caught:
-			interaction_hint_label.text = "E 关紫外灯" if s04_uv_on else "E 开紫外灯"
+			interaction_hint_label.text = _t("hint.s04.06") if s04_uv_on else _t("hint.s04.07")
 		elif n4 == "Window" and s04_girl_caught and not s04_frame_installed and not (s04_uv_on and s04_win_t >= 0.5 and not s04_handle_found):
-			interaction_hint_label.text = "E 装上画框"
+			interaction_hint_label.text = _t("hint.s04.12")
 	var hint_y: float = nearest.get("hint_y", nearest.position.y - nearest.radius * 0.55)
 	interaction_hint_label.position = Vector2(nearest.position.x - 28.0, hint_y)
 	interaction_hint_label.show()
@@ -7167,33 +7166,33 @@ func _sensor_closeup_press_e() -> bool:
 func _sensor_closeup_hint() -> String:
 	match closeup:
 		"eyepiece":
-			return "A/D 推拉镜片　　E 收起"
+			return _t("hint.hall.01")
 		"cleaner":
 			match _cleaner_spot(closeup_hand):
 				"him":
-					return "E 说话"
+					return _t("hint.shared.06")
 				"bucket":
-					return "E 看看水桶后面" if (s07_active and not s07_found.get("hall", true)) else "E 碰一碰水"
-			return "WASD 移动手　　E 收起"
+					return _t("hint.hall.02") if (s07_active and not s07_found.get("hall", true)) else _t("hint.hall.03")
+			return _t("hint.shared.03")
 		"rack":
 			if s07_active and not s08_stolen:
-				return "E 拿走" if s07_hesitated else "E 伸手"
+				return _t("hint.hall.04") if s07_hesitated else _t("hint.hall.05")
 			if s06_active and s06_case_clean and not s06_sensor_revealed:
-				return "左键 描镜头　　Space 收起粉笔" if blue_lake_active else "Space 拿出粉笔　　E 收起"
+				return _t("hint.hall.06") if blue_lake_active else _t("hint.shared.04")
 		"pile":
 			if s06_active and not s06_lamp_on:
-				return "E 开灯"
+				return _t("hint.hall.07")
 			if s06_active and not s06_shadow_done:
-				return "左键拖动展品　　Space 收起粉笔" if blue_lake_active else "Space 拿出粉笔　　E 收起"
+				return _t("hint.hall.08") if blue_lake_active else _t("hint.shared.04")
 		"map":
 			if s07_active and s07_room == "s01" and not s07_found["s01"]:
-				return "E 揭下贴纸"
+				return _t("hint.hall.09")
 		"girl":
 			if s07_active and s07_room == "s04" and not s07_found["s04"]:
-				return "E 抽出那张纸"
+				return _t("hint.hall.10")
 		"narcissus":
-			return "E 碰一碰　　WASD 移动手" if _narc_spot_at(closeup_hand) != "" else "WASD 移动手　　E 收起"
-	return "E 收起"
+			return _t("hint.shared.02") if _narc_spot_at(closeup_hand) != "" else _t("hint.shared.03")
+	return _t("hint.shared.05")
 
 ## Space in the pile or rack close-up: LAN's chalk. (No transformation scene here: LAN has been
 ## chalk before; S06 just hands it back.)
@@ -7410,7 +7409,7 @@ func _update_s06_wipe(delta: float) -> void:
 	s06_wipe_t = -1.0
 	s06_case_clean = true
 	chapter_state.mark_event(&"s06_case_cleaned")
-	objective_label.text = "第五格里是什么？"
+	objective_label.text = _t("goal.s06.03")
 	var line := _t("s06.wipe.03")
 	if s05_lines.is_empty():
 		_hall_say([line])
