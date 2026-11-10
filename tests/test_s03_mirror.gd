@@ -22,6 +22,7 @@ func _initialize() -> void:
 
 func _run() -> void:
 	main = MainScene.instantiate()
+	main.dialogue_needs_e = false  # tests drive the story; they don't page through dialogue
 	root.add_child(main)
 	await _frames(5)
 	# Arrive in S03 the way S02 hands off: same hall, still dark, near the guard.

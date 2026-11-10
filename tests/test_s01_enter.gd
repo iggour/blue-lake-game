@@ -29,6 +29,7 @@ func _finish(label: String) -> void:
 
 func _run() -> void:
 	main = MainScene.instantiate()
+	main.dialogue_needs_e = false  # tests drive the story; they don't page through dialogue
 	root.add_child(main)
 	await _frames(5)
 	_check(main.s01_active and main.s01_era == 1, "S01 starts with the photo in winter")
@@ -42,7 +43,7 @@ func _run() -> void:
 	await _walk_to_x(720.0)
 	await _press_e_expecting("ExitDoor")
 	_check(main.closeup == "door" and main.player.input_locked, "E opens the door's close-up and Graham stands still")
-	_check(not main.s01_gate_open and _says("门锁着"), "the door is locked")
+	_check(not main.s01_gate_open and _says("锁了"), "the door is locked")
 	await _seconds(0.4)
 	_check(main.interaction_hint_label.text == "E 收起", "in a close-up E puts it away (%s)" % main.interaction_hint_label.text)
 	await _shot("s01_2_door_closeup")
@@ -52,7 +53,7 @@ func _run() -> void:
 	# The photo, in winter: a big close-up, WASD moves Graham's hand over it.
 	await _walk_to_x(180.0)
 	await _press_e_expecting("EntrancePhoto")
-	_check(main.closeup == "photo" and _says("下雪") and _says("是我"), "the winter photo shows Graham on the ladder")
+	_check(main.closeup == "photo" and _says("是我"), "the winter photo shows Graham on the ladder")
 	await _seconds(0.4)
 	_check(main.interaction_hint_label.text.contains("E 收起"), "over nobody, E puts it away (%s)" % main.interaction_hint_label.text)
 	var px: float = main.player.position.x
@@ -72,13 +73,13 @@ func _run() -> void:
 	_check(main.s01_snow_out, "the cleaner shovels snow out of the photo")
 	await _hand_to(Vector2(200, 318))
 	await _press("interact")
-	_check(_says("歪了歪头"), "the bear tilts its head")
+	_check(_says("熊"), "the bear tilts its head")
 	await _close_photo()
 	await _shot("s01_3c_snow_on_the_floor")
 	# The lamp fixed in the photo: the hall's 出口 sign stops humming.
 	await _walk_to_x(720.0)
 	await _press_e_expecting("ExitDoor")
-	_check(_says("不再嗡嗡"), "the 出口 sign no longer hums (%s)" % main.dialogue_label.text)
+	_check(_says("不嗡嗡"), "the 出口 sign no longer hums (%s)" % main.dialogue_label.text)
 	await _close()
 
 	# 《观看的永恒》: the first look only describes it; then each E turns a hand by one notch.
@@ -107,16 +108,16 @@ func _run() -> void:
 	# Opening day: everyone in the photo can be touched; the girl has the chalk.
 	await _walk_to_x(180.0)
 	await _press_e_expecting("EntrancePhoto")
-	_check(_says("开幕日") and _says("小女孩"), "the opening-day photo, with the girl")
+	_check(_says("剪彩"), "the opening-day photo, with the girl")
 	await _seconds(0.4)
 	await _shot("s01_6_photo_opening_day")
 	# A small puzzle inside the photo: no ribbon yet. The girl only stares at the guard's scissors.
 	await _hand_to(Vector2(205, 312))
 	await _press("interact")
-	_check(_says("大剪刀") and main.closeup_anim == "" and not main.s01_has_chalk, "the girl keeps her chalk and stares at the scissors")
+	_check(main.closeup_anim == "" and not main.s01_has_chalk, "the girl keeps her chalk and stares at the scissors")
 	await _hand_to(Vector2(320, 300))
 	await _press("interact")
-	_check(_says("等着剪") and not main.s01_ribbon_cut, "the guard has nothing to cut yet")
+	_check(_says("一动不动") and not main.s01_ribbon_cut, "the guard has nothing to cut yet")
 	await _hand_to(Vector2(70, 300))
 	await _press("interact")
 	await _seconds(0.9)

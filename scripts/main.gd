@@ -67,11 +67,14 @@ const CLOSEUP_RECTS := {
 	"pile": Rect2(276, 88, 600, 390),
 	"mural": Rect2(276, 88, 600, 390)
 }
-const CLOSEUP_OPEN_TIME := 0.28
+const CLOSEUP_OPEN_TIME := 0.2
+const CLOSEUP_CLOSE_TIME := 0.16
+## S01 close-ups get an entrance of their own (a line round the edge, a glint, a map unfolding).
+const S01_CLOSEUPS := ["photo", "map", "clocks", "door", "eye"]
 const CLOSEUP_ANIM_TIME := {
 	"chalk": 2.4, "key": 2.2, "door": 2.2, "turn": 0.9, "splat": 0.9, "eyelid": 1.6,
 	"glove": 2.0, "ripple": 1.4, "pose": 0.6, "mirror_pose": 2.4, "face": 0.4, "swap": 1.6,
-	"snip": 1.0, "dab": 1.4, "heads": 0.9, "giant": 2.0, "lamp": 1.4, "shovel": 1.2, "pages": 1.6,
+	"snip": 1.0, "dab": 2.8, "heads": 0.9, "giant": 2.0, "lamp": 1.4, "shovel": 1.2, "pages": 1.6,
 	"sponge": 2.4, "tail": 2.2, "switch": 0.5, "kent": 2.4, "reach": 1.0, "take": 2.6, "peel": 0.8
 }
 const S01_HAND_SPEED := 260.0                  # Graham's hand over the photo (its own space)
@@ -115,7 +118,10 @@ const S03_POV_LINES := [
 	"s03.pov.05",
 	"s03.pov.06",
 	"s03.pov.07",
-	"s03.pov.08"
+	"s03.pov.08",
+	"s03.pov.09",
+	"s03.pov.10",
+	"s03.pov.11"
 ]
 
 # S04 "整间展厅是一只眼睛": 《窗》 is the pupil and the room's only light. Blue Lake (Space + Chalk)
@@ -233,6 +239,9 @@ var s01_has_key := false              # drawn on the map with the chalk, lifted 
 var s01_maze_path: Array[Vector2i] = []   # the chalk line on the map, from "你在这里" to the red dot
 var s01_maze_adj := {}                # Vector2i -> Array of the grooves' neighbours
 var s01_exit_route := ""              # "past" (the key) or "future" (rusted through)
+var touch_pulse_t := -1.0              # a small ring where the hand touched (E), in the close-up's own space
+var touch_pulse_at := Vector2.ZERO
+var hand_drawn_frame := -10
 var closeup_hand := Vector2(380, 352)   # Graham's hand over the photo, in the photo's own space
 # What touching the people in the photo has changed (each shows somewhere else too):
 var s01_ribbon_cut := false           # the guard cut the ribbon: a stub stays tied to the door in later eras
@@ -269,6 +278,7 @@ var s01_eyelid_closed := false
 var s01_dark_overlay: ColorRect
 var closeup := ""                     # "" or what is being looked at up close (特写)
 var closeup_t := 0.0                  # 0..1 while it grows from the wall to the middle
+var closeup_age := 0.0                # seconds since this close-up was opened (entrance effects)
 var closeup_closing := false
 var closeup_from := Rect2()           # where it hangs in the room
 var closeup_anim := ""                # something happening inside the close-up
@@ -382,6 +392,7 @@ var s06_wipe_t := -1.0             # 0..1 while the tiny cleaner wipes the fifth
 var s06_lens_marked: Array = []    # which of the eight lens spots LAN has marked in the fifth case
 var s07_fish_fled := false
 var mouse_t := 0.0                 # the white mouse's own clock (its little runs and peeks)
+var s02_mouse_run := 0.0            # how far it has got since the belt stopped (nothing cancels it now)
 var s04_mouse := ""                # "", "eating", "fleeing", "bottle", "running", "pacing"
 var s04_mouse_x := 0.0
 var s04_mouse_seen := false        # the visitors have seen its dots run, in the dark
@@ -410,7 +421,17 @@ var blue_lake_intro_ready := false
 var blue_lake_transform_completed := false
 var space_prompt_visible := false
 var blue_lake_trigger_position := Vector2(360, 420)
-var dialogue_label: Label
+var dialogue_label: Label            # holds the whole current text (tests read it); hidden
+var dialogue_view: Label             # what the player sees: one line at a time, typed out
+var dlg_lines: Array = []
+var dlg_index := 0
+var dlg_shown := 0
+var dlg_t := 0.0
+var dlg_shake := 0.0
+var dlg_base_pos := Vector2(230, 505)
+var dlg_wait_ack := false               # a timed sequence is waiting for the player's E after the last line
+var dialogue_needs_e := true         # between two lines the player presses E (tests turn this off)
+var dialogue_more: Label             # the small "E ▸" when another line is waiting
 var status_label: Label
 var mode_label: Label
 var objective_label: Label
@@ -451,8 +472,11 @@ func _ready() -> void:
 
 func _process(delta: float) -> void:
 	queue_redraw()
+	_update_dialogue_view(delta)
 	_update_chalk_hover()
 	_update_interaction_hint()
+	if dialogue_needs_e and _dlg_e_continues() and interaction_hint_label:
+		interaction_hint_label.text = _t("hint.dialogue.more")
 	_update_s01(delta)
 	_update_closeup(delta)
 	_update_s02(delta)
@@ -534,6 +558,25 @@ func _build_ui() -> void:
 	dialogue_label.add_theme_constant_override("shadow_offset_y", 2)
 	dialogue_label.add_theme_font_size_override("font_size", 19)
 	layer.add_child(dialogue_label)
+	dialogue_label.visible = false
+	dialogue_view = Label.new()
+	dialogue_view.position = dlg_base_pos
+	dialogue_view.size = Vector2(700, 86)
+	dialogue_view.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	dialogue_view.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	dialogue_view.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	dialogue_view.add_theme_color_override("font_shadow_color", Color("#000000"))
+	dialogue_view.add_theme_constant_override("shadow_offset_x", 2)
+	dialogue_view.add_theme_constant_override("shadow_offset_y", 2)
+	dialogue_view.add_theme_font_size_override("font_size", 19)
+	layer.add_child(dialogue_view)
+	dialogue_more = Label.new()
+	dialogue_more.text = "E ▸"
+	dialogue_more.position = dlg_base_pos + Vector2(664, 66)
+	dialogue_more.add_theme_font_size_override("font_size", 13)
+	dialogue_more.add_theme_color_override("font_color", Color(1, 1, 1, 0.6))
+	dialogue_more.visible = false
+	layer.add_child(dialogue_more)
 	_update_ui()
 
 func _build_gallery() -> void:
@@ -1040,7 +1083,10 @@ func _draw_closeup() -> void:
 	if closeup == "":
 		_draw_hyperreal(cv)
 		return
+	# Opening: fast out, then settles (ease-out); closing: smooth.
 	var e := closeup_t * closeup_t * (3.0 - 2.0 * closeup_t)
+	if not closeup_closing:
+		e = 1.0 - pow(1.0 - closeup_t, 3.0)
 	cv.draw_rect(Rect2(0, 58, 1152, 590), Color(0.02, 0.03, 0.05, 0.8 * e), true)
 	var kind := _closeup_kind()
 	var target: Rect2 = CLOSEUP_RECTS[kind]
@@ -1091,8 +1137,142 @@ func _draw_closeup() -> void:
 			_draw_closeup_pile(cv, sz)
 		"mural":
 			_draw_closeup_mural(cv, sz)
+	if not closeup_closing:
+		_draw_s01_entrance(cv, kind, sz)
 	cv.draw_set_transform(Vector2.ZERO)
 	_draw_hyperreal(cv)
+
+## --- S01 close-up entrances (2026-11-09, user): quick, one gesture each --------------------------
+## Composition: each close-up gets one line or one plane that moves, nothing stacked.
+## All: a hairline runs once round the edge as it opens, then fades (the eye is led to the frame).
+## Photo: a light band slides across the glass, and now and then a faint one again.
+## Map: it unfolds, panel by panel; the creases stay faintly on the paper.
+func _draw_s01_entrance(cv: CanvasItem, kind: String, sz: Vector2) -> void:
+	var a := closeup_age
+	var m := minf(sz.x, sz.y)
+	# The hairline (blue when it is LAN who is looking).
+	var line_color := Color(0.62, 0.82, 1.0) if kind == "lan" else Color(1, 1, 1)
+	if a < 0.6:
+		var k := clampf(a / 0.3, 0.0, 1.0)
+		var fade := 1.0 - clampf((a - 0.3) / 0.3, 0.0, 1.0)
+		var corners := [Vector2.ZERO, Vector2(sz.x, 0), sz, Vector2(0, sz.y), Vector2.ZERO]
+		var total := 2.0 * (sz.x + sz.y)
+		var left := total * k
+		for i in range(4):
+			var p0: Vector2 = corners[i]
+			var p1: Vector2 = corners[i + 1]
+			var seg := p0.distance_to(p1)
+			if left <= 0.0:
+				break
+			var end := p1 if left >= seg else p0.lerp(p1, left / seg)
+			cv.draw_line(p0, end, Color(line_color, 0.75 * fade), 1.5)
+			left -= seg
+	match kind:
+		# --- the other halls (2026-11-10, user): one gesture each, nothing stacked ---
+		"narcissus":
+			# Light runs once along the water at the foot of the frame.
+			if a > 0.1 and a < 0.75:
+				var g := (a - 0.1) / 0.65
+				var fade := sin(g * PI)
+				var x := sz.x * (1.0 - pow(1.0 - g, 2.0))
+				var y := sz.y * 0.9
+				cv.draw_line(Vector2(maxf(0.0, x - 90.0), y), Vector2(x, y), Color(1, 1, 1, 0.5 * fade), 2.0)
+				cv.draw_line(Vector2(maxf(0.0, x - 50.0), y + 6.0), Vector2(minf(sz.x, x + 20.0), y + 6.0), Color(1, 1, 1, 0.25 * fade), 1.0)
+		"venus":
+			# A line of light drops down her axis, from where the prism hangs.
+			if a < 0.6:
+				var g := 1.0 - pow(1.0 - clampf(a / 0.35, 0.0, 1.0), 2.0)
+				var fade := 1.0 - clampf((a - 0.35) / 0.25, 0.0, 1.0)
+				cv.draw_line(Vector2(sz.x * 0.5, 0), Vector2(sz.x * 0.5, sz.y * g), Color(1, 1, 1, 0.45 * fade), 1.5)
+		"girl":
+			# A framed painting: light slides over the varnish.
+			var canvas := Rect2(Vector2(14, 14), sz - Vector2(28, 28))
+			if a > 0.12 and a < 0.7:
+				var g := (a - 0.12) / 0.58
+				_draw_glint(cv, canvas, lerpf(canvas.position.x - 120.0, canvas.end.x + canvas.size.y * 0.5, 1.0 - pow(1.0 - g, 2.0)), 40.0, 0.16)
+		"window":
+			# 《窗》: two curtains part.
+			if a < 0.3:
+				var g := 1.0 - pow(1.0 - a / 0.3, 3.0)
+				var half := sz.x * 0.5 * (1.0 - g)
+				var cloth := Color(0.09, 0.08, 0.07, 0.88)
+				cv.draw_rect(Rect2(0, 0, half, sz.y), cloth, true)
+				cv.draw_rect(Rect2(sz.x - half, 0, half, sz.y), cloth, true)
+				cv.draw_line(Vector2(half, 0), Vector2(half, sz.y), Color(1, 1, 1, 0.35), 1.5)
+				cv.draw_line(Vector2(sz.x - half, 0), Vector2(sz.x - half, sz.y), Color(1, 1, 1, 0.35), 1.5)
+		"bench", "eyepiece":
+			# Looking closely: a ring draws in to the middle and is gone.
+			if a < 0.45:
+				var g := 1.0 - pow(1.0 - a / 0.45, 3.0)
+				cv.draw_arc(sz * 0.5, lerpf(m * 0.46, m * 0.1, g), 0.0, TAU, 56, Color(1, 1, 1, 0.5 * (1.0 - g)), 1.5)
+		"visitor":
+			# They come up out of the dark.
+			if a < 0.5:
+				cv.draw_rect(Rect2(Vector2.ZERO, sz), Color(0, 0, 0, 0.8 * (1.0 - a / 0.5)), true)
+		"twins":
+			# One half, then the other.
+			if a < 0.42:
+				var left := 0.75 * (1.0 - clampf(a / 0.24, 0.0, 1.0))
+				var right := 0.75 * (1.0 - clampf((a - 0.14) / 0.28, 0.0, 1.0))
+				cv.draw_rect(Rect2(0, 0, sz.x * 0.5, sz.y), Color(0, 0, 0, left), true)
+				cv.draw_rect(Rect2(sz.x * 0.5, 0, sz.x * 0.5, sz.y), Color(0, 0, 0, right), true)
+		"rack":
+			# The sight chart: a line reads down the rows.
+			if a < 0.55:
+				var g := a / 0.55
+				var y := sz.y * (1.0 - pow(1.0 - g, 2.0))
+				cv.draw_line(Vector2(0, y), Vector2(sz.x, y), Color(1, 1, 1, 0.4 * sin(g * PI)), 1.5)
+		"pile":
+			# The floor lamp behind: a breath of warm light.
+			if a < 0.35:
+				cv.draw_rect(Rect2(Vector2.ZERO, sz), Color(1.0, 0.9, 0.7, 0.2 * (1.0 - a / 0.35)), true)
+		"mural":
+			# A shadow passes over the wall, once.
+			if a > 0.1 and a < 0.7:
+				var g := (a - 0.1) / 0.6
+				var wall := Rect2(Vector2.ZERO, sz)
+				var band := PackedVector2Array([Vector2(lerpf(-140.0, sz.x + sz.y * 0.5, g), 0), Vector2(lerpf(-140.0, sz.x + sz.y * 0.5, g) + 70.0, 0), Vector2(lerpf(-140.0, sz.x + sz.y * 0.5, g) + 70.0 - sz.y * 0.5, sz.y), Vector2(lerpf(-140.0, sz.x + sz.y * 0.5, g) - sz.y * 0.5, sz.y)])
+				var box := PackedVector2Array([wall.position, Vector2(wall.end.x, 0), wall.end, Vector2(0, wall.end.y)])
+				for poly in Geometry2D.intersect_polygons(band, box):
+					cv.draw_colored_polygon(poly, Color(0, 0, 0, 0.14))
+		"photo":
+			var glass := Rect2(Vector2(18, 18), sz - Vector2(36, 36))
+			if a > 0.12 and a < 0.7:
+				var g := (a - 0.12) / 0.58
+				var x := lerpf(glass.position.x - 120.0, glass.end.x + glass.size.y * 0.5, 1.0 - pow(1.0 - g, 2.0))
+				_draw_glint(cv, glass, x, 46.0, 0.22)
+				_draw_glint(cv, glass, x + 64.0, 10.0, 0.16)
+			# Now and then, faintly.
+			var cycle := fmod(a + 3.0, 7.5)
+			if cycle < 0.9 and a > 1.0:
+				var x2 := lerpf(glass.position.x - 80.0, glass.end.x + glass.size.y * 0.5, cycle / 0.9)
+				_draw_glint(cv, glass, x2, 30.0, 0.09)
+		"map":
+			var panels := 4
+			var pw := sz.x / panels
+			var paper_back := Color("#d6caa8")
+			for i in range(panels):
+				var p := clampf((a - 0.05 - i * 0.07) / 0.18, 0.0, 1.0)
+				p = 1.0 - pow(1.0 - p, 3.0)
+				var x0 := i * pw
+				# The crease, faintly, for good.
+				if i > 0:
+					cv.draw_line(Vector2(x0, 0), Vector2(x0, sz.y), Color(0, 0, 0, 0.10), 1.0)
+					cv.draw_line(Vector2(x0 + 1.5, 0), Vector2(x0 + 1.5, sz.y), Color(1, 1, 1, 0.12), 1.0)
+				if p < 1.0:
+					var cover := Rect2(x0 + pw * p, 0, pw * (1.0 - p) + 1.0, sz.y)
+					cv.draw_rect(cover, paper_back.darkened(0.08 * float(i % 2)), true)
+					cv.draw_line(Vector2(cover.position.x, 0), Vector2(cover.position.x, sz.y), Color(0, 0, 0, 0.35), 2.0)
+			cv.draw_line(Vector2(0, sz.y * 0.5), Vector2(sz.x, sz.y * 0.5), Color(0, 0, 0, 0.08), 1.0)
+			cv.draw_line(Vector2(0, sz.y * 0.5 + 1.5), Vector2(sz.x, sz.y * 0.5 + 1.5), Color(1, 1, 1, 0.10), 1.0)
+
+## A slanted band of light across `area`, clipped to it.
+func _draw_glint(cv: CanvasItem, area: Rect2, x: float, w: float, alpha: float) -> void:
+	var h := area.size.y
+	var band := PackedVector2Array([Vector2(x, area.position.y), Vector2(x + w, area.position.y), Vector2(x + w - h * 0.5, area.end.y), Vector2(x - h * 0.5, area.end.y)])
+	var box := PackedVector2Array([area.position, Vector2(area.end.x, area.position.y), area.end, Vector2(area.position.x, area.end.y)])
+	for poly in Geometry2D.intersect_polygons(band, box):
+		cv.draw_colored_polygon(poly, Color(1, 1, 1, alpha))
 
 ## A person in the photo. `facing_out`: the face turned toward the viewer (blank, no features);
 ## otherwise they are seen from behind, looking at the door.
@@ -1111,7 +1291,14 @@ func _s01_highlight(cv: CanvasItem, id: String) -> void:
 		if spot.id == id:
 			var pos: Vector2 = spot.pos
 			var r: float = spot.r
-			cv.draw_arc(pos, r + 2.0 * sin(Time.get_ticks_msec() * 0.008), 0.0, TAU, 28, Color(1, 1, 1, 0.55), 2.0)
+			# Viewfinder corners (it's a photograph), breathing a little.
+			var d := r + 2.0 * sin(Time.get_ticks_msec() * 0.008)
+			var arm := d * 0.45
+			for sx in [-1.0, 1.0]:
+				for sy in [-1.0, 1.0]:
+					var c := pos + Vector2(sx * d, sy * d)
+					cv.draw_line(c, c - Vector2(sx * arm, 0), Color(1, 1, 1, 0.7), 2.0)
+					cv.draw_line(c, c - Vector2(0, sy * arm), Color(1, 1, 1, 0.7), 2.0)
 
 func _draw_closeup_photo(cv: CanvasItem, sz: Vector2) -> void:
 	var font := ThemeDB.fallback_font
@@ -1160,11 +1347,20 @@ func _draw_closeup_photo_opening(cv: CanvasItem, ground_y: float, t: float) -> v
 	# and the girl (LAN) plays with what is left.
 	var cut := s01_ribbon_cut or (closeup_anim == "snip" and t > 0.45)
 	var red := Color("#d8202a")
+	# The restorer walks across the door painting the ribbon as she goes, then walks back.
+	var rx := 70.0
+	var walking := false
+	if closeup_anim == "dab":
+		if t < 0.65:
+			rx = lerpf(70.0, 392.0, smoothstep(0.0, 1.0, t / 0.65))
+			walking = true
+		else:
+			rx = lerpf(392.0, 70.0, smoothstep(0.0, 1.0, (t - 0.65) / 0.35))
 	var reach := 0.0
 	if s01_restorer_dab:
 		reach = 1.0
 	elif closeup_anim == "dab":
-		reach = clampf((t - 0.25) / 0.6, 0.0, 1.0)
+		reach = 1.0 if not walking else clampf((rx + 28.0 - 110.0) / 300.0, 0.0, 1.0)
 	if cut:
 		var fall := 1.0 if s01_ribbon_cut else clampf((t - 0.45) / 0.4, 0.0, 1.0)
 		if not s01_has_chalk and not (closeup_anim == "chalk"):
@@ -1187,15 +1383,17 @@ func _draw_closeup_photo_opening(cv: CanvasItem, ground_y: float, t: float) -> v
 		cv.draw_line(pivot + Vector2(28, 0).rotated(sgn * open_a), pivot - Vector2(18, 0).rotated(sgn * open_a), Color("#9aa3a8"), 3.0)
 	cv.draw_circle(pivot - Vector2(20, 0), 3.0, Color("#3b3f46"))
 	_s01_highlight(cv, "guard")
-	# The restorer, brush in hand; touched, she paints the ribbon across the door.
+	# The restorer, brush in hand; touched, she walks across the door painting the ribbon, and back.
 	var dab_k := 0.0
+	var bob := 0.0
 	if closeup_anim == "dab":
 		dab_k = sin(clampf(t, 0.0, 1.0) * PI)
-	_cv_figure(cv, Vector2(70, ground_y - 50), Color("#b26b5e"), 3.6, dab_k > 0.2)
-	var brush := Vector2(96, 282)
-	if closeup_anim == "dab" and reach > 0.0 and reach < 1.0:
-		brush = Vector2(110 + 300.0 * reach, 292)
-	cv.draw_line(Vector2(84, 300), brush, Color("#7a5a3a"), 2.0 + 2.0 * dab_k)
+		bob = -absf(sin(t * TAU * 5.0)) * 3.0
+	_cv_figure(cv, Vector2(rx, ground_y - 50 + bob), Color("#b26b5e"), 3.6)
+	var brush := Vector2(rx + 26, 282)
+	if walking:
+		brush = Vector2(rx + 28, 294)
+	cv.draw_line(Vector2(rx + 14, 300 + bob), brush, Color("#7a5a3a"), 2.0 + 1.0 * dab_k)
 	cv.draw_circle(brush, 3.0, red if (closeup_anim == "dab" or s01_restorer_dab) else Color("#7a5a3a"))
 	_s01_highlight(cv, "restorer")
 	# The visitors look at the door; touched, they all turn to look out of the photo, faceless.
@@ -1203,15 +1401,22 @@ func _draw_closeup_photo_opening(cv: CanvasItem, ground_y: float, t: float) -> v
 	for i in range(3):
 		_cv_figure(cv, Vector2(400.0 + i * 24.0, ground_y - 46), Color("#7a6a5a"), 3.2, turned)
 	_s01_highlight(cv, "visitors")
-	# The cleaner, sweeping. Touched, he grows until he looks over the roof, then shrinks back.
-	var g := 0.0
+	# The cleaner, sweeping. Touched, he doesn't look up: three hard strokes, the dust flies to the corner.
+	var sweep := 0.0
+	var dust := 0.0
 	if closeup_anim == "giant":
-		g = sin(clampf(t, 0.0, 1.0) * PI)
-	var cleaner_k := lerpf(3.0, 13.0, g)
+		var k := clampf(t, 0.0, 1.0)
+		sweep = sin(k * TAU * 3.0) * (1.0 - k)
+		dust = sin(k * PI)
+	var cleaner_k := 3.0
 	var feet := Vector2(482, ground_y)
 	var head := feet - Vector2(0, 14.0 * cleaner_k)
 	_cv_figure(cv, head, Color("#5d7a5a"), cleaner_k)
-	cv.draw_line(feet + Vector2(-6 * cleaner_k * 0.3, -6), feet + Vector2(-22, 2) * (cleaner_k / 3.0), Color("#8a6a3a"), 2.0 + g * 4.0)
+	cv.draw_line(feet + Vector2(-6 * cleaner_k * 0.3, -6), feet + Vector2(-22.0 + 16.0 * sweep, 2), Color("#8a6a3a"), 2.0)
+	if dust > 0.0:
+		for i in range(5):
+			var p := feet + Vector2(-26.0 + i * 9.0 + 40.0 * t, -4.0 - 10.0 * dust * (0.5 + 0.1 * i))
+			cv.draw_circle(p, 2.0 + i * 0.6, Color(0.55, 0.5, 0.42, 0.5 * dust))
 	_s01_highlight(cv, "cleaner")
 	# On the pavement, in chalk: a round scribble with grooves and a dot at the back (the map).
 	var scribble := Vector2(150, 348)
@@ -1276,6 +1481,7 @@ func _draw_closeup_photo_winter(cv: CanvasItem, ground_y: float, inner: Rect2, t
 	cv.draw_rect(Rect2(bear + Vector2(-6, -19) + look, Vector2(3.5, 3.5)), Color("#2f86e0"), true)
 	cv.draw_rect(Rect2(bear + Vector2(3, -19) + look, Vector2(3.5, 3.5)), Color("#2f86e0"), true)
 	_s01_highlight(cv, "bear")
+	_s01_highlight(cv, "snow")
 
 func _draw_closeup_photo_later(cv: CanvasItem, ground_y: float, inner: Rect2, door: Rect2, t: float) -> void:
 	# Years later: faded, nobody, the door boarded up, water stains and mould on the print.
@@ -1382,6 +1588,10 @@ func _draw_closeup_hand(cv: CanvasItem, bottom: float = 460.0) -> void:
 	for f in [Vector2(-7, 0), Vector2(5, -2), Vector2(9, 4)]:
 		cv.draw_line(h + Vector2(f.x * 0.6, 4), h + f, skin, 3.5)
 	cv.draw_circle(h + Vector2(-1, -10), 2.0, skin.darkened(0.15))
+	hand_drawn_frame = Engine.get_process_frames()
+	if touch_pulse_t >= 0.0 and touch_pulse_t < 0.28:
+		var g := touch_pulse_t / 0.28
+		cv.draw_arc(touch_pulse_at + Vector2(-1, -10), 6.0 + 22.0 * (1.0 - pow(1.0 - g, 2.0)), 0.0, TAU, 28, Color(1, 1, 1, 0.6 * (1.0 - g)), 1.5)
 
 func _draw_closeup_map(cv: CanvasItem, sz: Vector2) -> void:
 	var font := ThemeDB.fallback_font
@@ -3830,8 +4040,14 @@ func _hide_space_prompt() -> void:
 		interaction_hint_label.hide()
 
 func _unhandled_input(event: InputEvent) -> void:
+	if dialogue_needs_e and event.is_action_pressed("interact") and (_dlg_has_more() or dlg_wait_ack):
+		_dlg_page()
+		return
 	if not LEGACY_PROTOTYPE_FLOW_ENABLED:
 		if closeup != "":
+			if event.is_action_pressed("interact") and Engine.get_process_frames() - hand_drawn_frame <= 2:
+				touch_pulse_t = 0.0
+				touch_pulse_at = closeup_hand
 			if s01_active:
 				_s01_closeup_input(event)
 			elif closeup == "eyepiece" and (event.is_action_pressed("move_left") or event.is_action_pressed("move_right")):
@@ -4018,6 +4234,7 @@ func _try_s01_interact() -> void:
 func _open_closeup(id: String, from: Rect2) -> void:
 	closeup = id
 	closeup_t = 0.0
+	closeup_age = 0.0
 	closeup_closing = false
 	closeup_from = from
 	closeup_anim = ""
@@ -4044,10 +4261,16 @@ func _update_closeup(delta: float) -> void:
 	hyper_flash_left = maxf(0.0, hyper_flash_left - delta)
 	s05_lens_pos = move_toward(s05_lens_pos, float(s05_lens_notch), delta * 5.0)
 	mouse_t += delta
+	if touch_pulse_t >= 0.0:
+		touch_pulse_t += delta
+		if touch_pulse_t > 0.3:
+			touch_pulse_t = -1.0
+	if s03_crossed and s02_mouse_run < 600.0:
+		s02_mouse_run += delta * (player.speed if player else 200.0)
 	if closeup == "":
 		return
 	if closeup_closing:
-		closeup_t = maxf(0.0, closeup_t - delta / CLOSEUP_OPEN_TIME)
+		closeup_t = maxf(0.0, closeup_t - delta / CLOSEUP_CLOSE_TIME)
 		if closeup_t <= 0.0:
 			var was := closeup
 			closeup = ""
@@ -4066,6 +4289,7 @@ func _update_closeup(delta: float) -> void:
 				_show_dialogue(_t("s03.cross.01"))
 		return
 	closeup_t = minf(1.0, closeup_t + delta / CLOSEUP_OPEN_TIME)
+	closeup_age += delta
 	# Big close-ups: WASD moves Graham's hand over the photo or 《那喀索斯》.
 	if closeup in ["photo", "narcissus", "bench", "smear", "cleaner"] and closeup_anim == "":
 		var v := Input.get_vector("move_left", "move_right", "move_up", "move_down")
@@ -4218,7 +4442,8 @@ func _s01_photo_spots() -> Array:
 			return [
 				{"id": "graham", "pos": Vector2(289, 248), "r": 26.0},
 				{"id": "shoveler", "pos": Vector2(96, 300), "r": 26.0},
-				{"id": "bear", "pos": Vector2(200, 318), "r": 22.0}
+				{"id": "bear", "pos": Vector2(200, 318), "r": 22.0},
+				{"id": "snow", "pos": Vector2(420, 350), "r": 30.0}
 			]
 	return [{"id": "book", "pos": Vector2(259, 337), "r": 22.0}]
 
@@ -4241,10 +4466,10 @@ func _s01_photo_touch(id: String) -> void:
 			if s01_has_chalk:
 				_show_dialogue(_t("s01.photo_touch.01"))
 			elif not s01_ribbon_cut:
-				_show_dialogue(_t("s01.photo_touch.02"))
+				_show_dialogue("")
 			else:
 				_s01_play("chalk")
-				_show_dialogue(_t("s01.photo_touch.03"))
+				_show_dialogue("")
 		"guard":
 			if not s01_restorer_dab:
 				_show_dialogue(_t("s01.photo_touch.04"))
@@ -4283,6 +4508,8 @@ func _s01_photo_touch(id: String) -> void:
 		"bear":
 			chapter_state.mark_story_event(&"s01_bear_tilted")
 			_show_dialogue(_t("s01.photo_touch.16"))
+		"snow":
+			_show_dialogue(_t("s01.photo_touch.19"))
 		"book":
 			if s01_book_open:
 				_show_dialogue(_t("s01.photo_touch.17"))
@@ -4328,7 +4555,9 @@ func _s01_photo_text() -> String:
 	if s01_era == 0:
 		if s01_has_chalk:
 			return _t("s01.photo.opening_day_chalk_taken")
-		return _t("s01.photo.opening_day")
+		var first_open := not chapter_state.has_story_event(&"s01_saw_lan_in_photo")
+		chapter_state.mark_story_event(&"s01_saw_lan_in_photo")
+		return _t("s01.photo.opening_day_first") if first_open else _t("s01.photo.opening_day")
 	if s01_era == 1:
 		var first := not chapter_state.has_story_event(&"s01_saw_self_in_photo")
 		chapter_state.mark_story_event(&"s01_saw_self_in_photo")
@@ -4579,10 +4808,8 @@ func _complete_s02_counterpart() -> void:
 		return
 	s02_completion_started = true
 	chapter_state.mark_event(&"s02_counterpart_noticed")
-	_show_dialogue(_t("s02.end.01"))
-	await get_tree().create_timer(2.6).timeout
-	_show_dialogue(_t("s02.end.02"))
-	await get_tree().create_timer(2.6).timeout
+	await _say_wait(_t("s02.end.01"), 2.6)
+	await _say_wait(_t("s02.end.02"), 2.6)
 	chapter_state.mark_event(&"s02_space_loop_recognized")
 	chapter_state.learn(&"s02_space_has_a_problem")
 	chapter_state.set_player_goal(&"understand_the_space")
@@ -4657,6 +4884,9 @@ func _describe_exhibit(object_name: String) -> void:
 
 func _try_s03_interact() -> void:
 	if not s03_active or scene_state != "gallery" or transition_started or s03_busy:
+		return
+	if s03_pov_active:
+		_s03_advance_pov()      # E, like a click, brings the next thing overheard
 		return
 	if s03_ride_active:
 		_s03_ride_interact()
@@ -4770,8 +5000,7 @@ func _s03_cross_by_reflection() -> void:
 	chapter_state.mark_event(&"s03_crossed_by_reflection")
 	_open_closeup("swap", S02_DOOR_RECT)
 	_s01_play("swap")
-	_show_dialogue(_t("s03.cross.03"))
-	await get_tree().create_timer(1.6).timeout
+	await _say_wait(_t("s03.cross.03"), 1.6)
 	player.position.x = reflected_x
 	player.input_locked = false
 	s03_busy = false
@@ -4817,7 +5046,7 @@ func _s03_advance_pov() -> void:
 	s03_pov_line += 1
 	s03_pov_timer = 0.0
 	if s03_pov_line >= S03_POV_LINES.size():
-		_show_dialogue(_t("s03.pov.09"))
+		_show_dialogue(_t("s03.pov.end"))
 		return
 	if s03_pov_line == 1:
 		s03_hands_seen = true
@@ -4836,8 +5065,7 @@ func _s03_end_pov() -> void:
 func _s03_guard_brings_arm() -> void:
 	s03_busy = true
 	player.input_locked = true
-	_show_dialogue(_t("s03.guard_arm.02"))
-	await get_tree().create_timer(2.8).timeout
+	await _say_wait(_t("s03.guard_arm.02"), 2.8)
 	_show_dialogue(_t("s03.guard_arm.03"))
 	s03_guard_walking = true
 	while s03_guard_x < S03_GUARD_AT_VENUS:
@@ -4931,7 +5159,7 @@ func _update_s03(delta: float) -> void:
 			_show_dialogue(_t("s03.update.01"))
 	if s03_pov_active:
 		s03_pov_timer += delta
-		if s03_pov_timer >= 3.0 and s03_pov_line < S03_POV_LINES.size():
+		if not dialogue_needs_e and s03_pov_timer >= 3.0 and s03_pov_line < S03_POV_LINES.size():
 			_s03_advance_pov()
 	# Standing at the entrance puts the reflection — Blue Lake — at the far door. Once Graham knows
 	# whose arm the bonsai holds, the belt carries Blue Lake through the 里 side toward the middle.
@@ -6586,6 +6814,7 @@ func _enter_s03_after_s02() -> void:
 	s03_arms_returned = false
 	s03_mirror_held = false
 	s03_crossed = false
+	s02_mouse_run = 0.0
 	s03_ride_active = false
 	s03_ride_done = false
 	s03_pot_x = S03_POT_START
@@ -6792,7 +7021,171 @@ func _t(id: String, args: Dictionary = {}) -> String:
 
 func _show_dialogue(text: String) -> void:
 	if dialogue_label:
-		dialogue_label.text = text
+		dialogue_label.text = text.replace("｛", "").replace("｝", "")
+	_dlg_start(text)
+
+## Dialogue playback: each line of a text is typed out on its own, then the next one replaces it.
+## In the script, text inside ｛｝ types slowly; a line with "！" gives the box a small shake;
+## a blank line is a short pause. LAN's lines are blue, narration is a warm grey.
+func _dlg_start(text: String) -> void:
+	dlg_lines.clear()
+	var pause := 0.0
+	for raw in text.split("\n"):
+		if raw.strip_edges() == "":
+			pause += 0.5
+			continue
+		var shown := ""
+		var slow_mask: Array[bool] = []
+		var slow := false
+		for ch in raw:
+			if ch == "｛":
+				slow = true
+				continue
+			if ch == "｝":
+				slow = false
+				continue
+			shown += ch
+			slow_mask.append(slow)
+		dlg_lines.append({"text": shown, "steps": _dlg_steps(shown, slow_mask), "pause": pause})
+		pause = 0.0
+	dlg_index = 0
+	_dlg_apply_line()
+
+## How a line comes out: a list of [characters visible, wait before showing them].
+## Narration: all at once. Speech: a short line all at once; a long one phrase by phrase, the way
+## it is said (pause after commas, longer after full stops); characters inside ｛｝ one by one.
+func _dlg_speaker_end(text: String) -> int:
+	var colon := text.find("：")
+	if colon > 0 and colon <= 6 and not text.substr(0, colon).contains("，"):
+		return colon + 1
+	return -1
+
+func _dlg_steps(text: String, slow_mask: Array[bool]) -> Array:
+	var n := text.length()
+	var body := _dlg_speaker_end(text)
+	var any_slow := slow_mask.has(true)
+	if body < 0 or (not any_slow and n - body <= 16):
+		return [[n, 0.0]]
+	var steps := []
+	var cur := 0
+	var wait := 0.0
+	for i in range(n):
+		if slow_mask[i]:
+			if i > cur:
+				steps.append([i, wait])
+				wait = 0.15
+			steps.append([i + 1, wait])
+			wait = 0.22
+			cur = i + 1
+			continue
+		var ch := text[i]
+		if i >= body and "，。！？；、）".contains(ch):
+			var strong := "。！？".contains(ch)
+			if strong or i + 1 - cur >= 5:
+				steps.append([i + 1, wait])
+				cur = i + 1
+				wait = 0.32 if strong else 0.16
+	if cur < n:
+		steps.append([n, wait])
+	return steps
+
+func _dlg_apply_line() -> void:
+	if dialogue_view == null:
+		return
+	if dlg_lines.is_empty():
+		dialogue_view.text = ""
+		if dialogue_more:
+			dialogue_more.visible = false
+		return
+	if dialogue_more:
+		dialogue_more.visible = false
+	var line: Dictionary = dlg_lines[dlg_index]
+	var text: String = line.text
+	dialogue_view.text = text
+	dialogue_view.visible_characters = 0
+	dlg_shown = 0
+	dlg_t = 0.0
+	var color := Color("#e4dccb")
+	var colon := _dlg_speaker_end(text) - 1
+	if colon > 0:
+		var who := text.substr(0, colon)
+		if who.begins_with("LAN"):
+			color = Color("#9fd2ff")
+		elif who == "格雷汉":
+			color = Color("#ffffff")
+		else:
+			color = Color("#ffe6a8")
+	dialogue_view.add_theme_color_override("font_color", color)
+
+## True while the current text still has another line after this one.
+func _dlg_has_more() -> bool:
+	return dlg_index < dlg_lines.size() - 1
+
+## E while lines are waiting: finish the line being shown, or go on to the next one.
+func _dlg_page() -> void:
+	if dlg_lines.is_empty():
+		dlg_wait_ack = false
+		return
+	var steps: Array = dlg_lines[dlg_index].steps
+	if dlg_shown < steps.size():
+		dialogue_view.visible_characters = -1
+		dlg_shown = steps.size()
+		dlg_t = 0.0
+		return
+	if _dlg_has_more():
+		dlg_index += 1
+		_dlg_apply_line()
+		return
+	dlg_wait_ack = false
+
+## For sequences that used to run on a timer: show the text and wait until the player has read it
+## through with E. In tests (dialogue_needs_e off) it waits `secs`, as before.
+func _say_wait(text: String, secs: float) -> void:
+	_show_dialogue(text)
+	if not dialogue_needs_e:
+		await get_tree().create_timer(secs).timeout
+		return
+	dlg_wait_ack = true
+	while dlg_wait_ack:
+		await get_tree().process_frame
+
+## True when E will bring the next thing to read (another line, the end of a waited text, Venus's next line).
+func _dlg_e_continues() -> bool:
+	return _dlg_has_more() or dlg_wait_ack or (s03_pov_active and s03_pov_line < S03_POV_LINES.size())
+
+func _update_dialogue_view(delta: float) -> void:
+	if dialogue_view == null:
+		return
+	if dlg_shake > 0.0:
+		dlg_shake -= delta
+		dialogue_view.position = dlg_base_pos + Vector2(randf_range(-3.0, 3.0), randf_range(-2.0, 2.0))
+	else:
+		dialogue_view.position = dlg_base_pos
+	if dlg_index >= dlg_lines.size():
+		return
+	var line: Dictionary = dlg_lines[dlg_index]
+	var steps: Array = line.steps
+	var n := String(line.text).length()
+	dlg_t += delta
+	if dlg_shown < steps.size():
+		while dlg_shown < steps.size() and dlg_t >= float(steps[dlg_shown][1]):
+			dlg_t -= float(steps[dlg_shown][1])
+			dialogue_view.visible_characters = int(steps[dlg_shown][0])
+			dlg_shown += 1
+		if dlg_shown >= steps.size():
+			dlg_t = 0.0
+			if String(line.text).contains("！"):
+				dlg_shake = 0.3
+		return
+	if dialogue_needs_e:
+		if dialogue_more:
+			dialogue_more.visible = _dlg_e_continues() and fmod(Time.get_ticks_msec() * 0.001, 1.0) < 0.7
+		return
+	if dlg_index < dlg_lines.size() - 1:
+		var hold := 0.7 + 0.035 * n + float(dlg_lines[dlg_index + 1].pause)
+		if dlg_t >= hold:
+			dlg_index += 1
+			_dlg_apply_line()
 
 func _update_ui() -> void:
 	if not status_label:
@@ -8085,16 +8478,18 @@ func _draw_s01_mouse() -> void:
 
 ## --- 第二幕 -----------------------------------------------------------------------------------
 func _s02_mouse_x() -> float:
-	var span := 1000.0 - (S02_AXIS_X + 40.0)
-	return 1000.0 - fmod(mouse_t * 95.0, span)
+	# It runs right; the belt carries it left exactly as fast. It gains a little, loses a little.
+	return 800.0 + sin(mouse_t * 0.9) * 26.0 + sin(mouse_t * 2.3) * 8.0 + s02_mouse_run
 
 func _draw_s02_mouse() -> void:
-	if not (s02_active or (s03_active and not s03_crossed)):
+	if not (s02_active or s03_active):
 		return
 	var x := _s02_mouse_x()
-	# Running left on the 里 side; near the axis it is suddenly back at the right.
-	var fade := clampf((x - (S02_AXIS_X + 40.0)) / 30.0, 0.0, 1.0)
-	_draw_mouse(self, Vector2(x, S04_MOUSE_Y), 1.0, -1.0, 0.85 * fade)
+	if x > 1180.0:
+		return
+	# Running right on the 里 side and getting nowhere; once the belt stops it is off, out to the right.
+	var fade := 1.0 - clampf((x - 1090.0) / 80.0, 0.0, 1.0)
+	_draw_mouse(self, Vector2(x, S04_MOUSE_Y), 1.0, 1.0, 0.85 * fade)
 
 ## --- 第三幕 -----------------------------------------------------------------------------------
 func _update_s04_mouse(delta: float) -> void:

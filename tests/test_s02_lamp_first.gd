@@ -16,6 +16,7 @@ func _initialize() -> void:
 
 func _start_s02() -> void:
 	main = MainScene.instantiate()
+	main.dialogue_needs_e = false  # tests drive the story; they don't page through dialogue
 	root.add_child(main)
 	await _frames(5)
 	main.s01_gate_open = true
