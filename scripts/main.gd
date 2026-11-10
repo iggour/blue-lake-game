@@ -2265,6 +2265,24 @@ func _hall_closeup_space() -> void:
 		closeup_t = 0.0
 		player.input_locked = false
 		_try_toggle_s03_blue_lake()
+		return
+	if s03_ride_active or s03_pov_active:
+		return
+	closeup = ""
+	closeup_t = 0.0
+	player.input_locked = false
+	if s03_active:
+		_try_toggle_s03_blue_lake()
+	elif s04_active:
+		_try_toggle_s04_blue_lake()
+	elif s05_active:
+		_try_toggle_s05_blue_lake()
+	elif s06_active:
+		_try_toggle_s06_blue_lake()
+	elif s07_active:
+		_try_toggle_s07_blue_lake()
+	elif s08_active:
+		_try_toggle_s08_blue_lake()
 
 func _venus_arm_waiting() -> bool:
 	return s03_active and ((s03_left_arm_ready and not s03_left_installed) or (s03_right_arm_ready and not s03_right_installed))
@@ -2761,15 +2779,14 @@ func _s04_closeup_press_e() -> bool:
 					_s04_talk_to_restorer()
 					return true
 				"side":
-					if s04_win_t > 0.75:
-						_show_dialogue(_t("s04.bench.03"))
-					else:
-						_show_dialogue(_t("s04.bench.04"))
+					_s04_talk_to_restorer()
 					return true
 				"bottle":
 					if s04_mouse == "bottle":
 						_s01_play("tail")
 						_show_dialogue(_t("s04.bench.05"))
+					elif not chapter_state.has_event(&"s04_mouse_caught") and not s04_riboflavin_applied:
+						_show_dialogue(_t("s04.smear.too_early"))
 					else:
 						_s04_open_smear()
 					return true
@@ -2800,7 +2817,7 @@ func _s04_closeup_hint() -> String:
 				"front":
 					return _t("hint.shared.06")
 				"side":
-					return _t("hint.s04.02")
+					return _t("hint.shared.06")
 				"bottle":
 					if s04_mouse == "bottle":
 						return _t("hint.s04.03")
@@ -4911,6 +4928,9 @@ func _try_s03_interact() -> void:
 	if s03_pov_active:
 		_s03_advance_pov()      # E, like a click, brings the next thing overheard
 		return
+	if s03_crossed and absf(player.position.x - _s03_far_door_x()) <= 70.0:
+		_s03_leave()
+		return
 	if s03_ride_active:
 		_s03_ride_interact()
 		return
@@ -6838,9 +6858,17 @@ func _update_route_transitions() -> void:
 		return
 	# S03: after trading places with her reflection, Graham leaves by the far (里) door on the right.
 	if s03_active and s03_crossed and player.position.x >= 1005.0:
-		chapter_state.mark_event(&"s03_exit_far_door")
-		chapter_state.complete_slice(ChapterState.Slice.S03_MIRROR)
-		_enter_s04_after_s03()
+		_s03_leave()
+
+func _s03_far_door_x() -> float:
+	return _s02_mx(S02_DOOR_RECT.get_center().x)
+
+func _s03_leave() -> void:
+	if not s03_active:
+		return
+	chapter_state.mark_event(&"s03_exit_far_door")
+	chapter_state.complete_slice(ChapterState.Slice.S03_MIRROR)
+	_enter_s04_after_s03()
 
 func _enter_s03_after_s02() -> void:
 	if s03_active:
@@ -7334,6 +7362,8 @@ func _update_interaction_hint() -> void:
 			interaction_hint_label.text = _t("hint.s02.05")
 		elif n3 == "HallDoor" and s03_mirror_held and not s03_crossed:
 			interaction_hint_label.text = _t("hint.s02.06")
+		if s03_crossed and player and absf(player.position.x - _s03_far_door_x()) <= 70.0:
+			interaction_hint_label.text = _t("hint.s03.exit")
 	if s05_active or s06_active or s07_active or s08_active:
 		var n5: String = nearest.get("name", "")
 		if not s05_lines.is_empty():
