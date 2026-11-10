@@ -181,23 +181,24 @@ func _run() -> void:
 	await _wait(1.3)
 	await _shot("s04_6b3_mouse_joints")
 	await _wait(1.2)
-	_check(main.s04_mouse == "running" and main.dialogue_label.text.contains("关节"), "it shakes the paint off except in its joints, and runs off to the visitors")
+	_check(main.s04_mouse == "table" and main.dialogue_label.text.contains("四只脚"), "it shakes the paint off except its face and feet, and waits on the bench")
 	_check(main.interaction_hint_label.text == "E 拿起核黄素", "the bottle on the bench (%s)" % main.interaction_hint_label.text)
 	await _press_action("interact")
 	_check(main.closeup == "smear", "the riboflavin close-up: Graham's front")
 	await _wait(0.4)
-	_check(main.S04_DROPS == 4, "four drops of riboflavin: hands and feet, like the mouse")
+	_check(main.S04_DROPS == 5, "five drops of riboflavin: face, hands and feet, like the mouse")
 	# A drop near a joint settles on it.
 	main.closeup_hand = (main.S04_JOINTS[4] as Vector2) + Vector2(14, -10)
 	await _press_action("interact")
 	_check(main.s04_dabs[0] == main.S04_JOINTS[4], "a drop near a wrist lands on the wrist")
-	for k in [5, 10]:
+	for k in [5, 10, 11]:
 		main.closeup_hand = main.S04_JOINTS[k]
 		await _press_action("interact")
 	await _shot("s04_6c_dabs")
-	main.closeup_hand = main.S04_JOINTS[11]
+	main.closeup_hand = main.S04_JOINTS[12]
 	await _press_action("interact")
-	_check(main.s04_riboflavin_applied and main._s04_joint_hits() == 4, "four drops, on both hands and both feet (%d)" % main._s04_joint_hits())
+	_check(main.s04_riboflavin_applied and main._s04_joint_hits() == 5, "five drops, on the face, both hands and both feet (%d)" % main._s04_joint_hits())
+	_check(main.s04_mouse == "running", "done: the mouse jumps down and runs off to the visitors")
 	await _wait(0.5)
 	_check(main.closeup == "", "the close-up closes after the last drop")
 	await _press_e_at("Bench")
@@ -244,6 +245,8 @@ func _run() -> void:
 	await _press_e_at("Window")
 	_check(main.s04_handle_found and main.closeup == "window", "E 《窗》 under UV: the handle she painted out")
 	await _shot("s04_8_frame_handle")
+	await _wait(4.0)
+	_check(main.s04_mouse == "gone" and main.chapter_state.has_event(&"s04_mouse_escaped_through_window"), "the mouse dashes over and out through 《窗》")
 	await _wait(S04_wait())
 	_check(main.s05_active, "S04 completes -> S05")
 	_check(main.closeup == "" and main.player.modulate.a == 1.0, "leaving S04 puts the close-up away and Graham back to normal")

@@ -395,6 +395,7 @@ var mouse_t := 0.0                 # the white mouse's own clock (its little run
 var s02_mouse_run := 0.0            # how far it has got since the belt stopped (nothing cancels it now)
 var s04_mouse := ""                # "", "eating", "fleeing", "bottle", "running", "pacing"
 var s04_mouse_x := 0.0
+var s04_mouse_climb := 0.0          # 0..1 up the wall into 《窗》 as it escapes
 var s04_mouse_seen := false        # the visitors have seen its dots run, in the dark
 var s04_mouse_hint_t := 0.0
 var s08_mouse := Vector2(940, 0.95)  # (near-plane x, depth z): behind the bucket
@@ -2622,12 +2623,13 @@ const S04_BENCH_STARRY_SCALE := 3.0
 const S04_FOVEA := 58.0
 # Graham's front, in the riboflavin close-up: shoulders, elbows, wrists, hips, knees, ankles (L, R).
 const S04_JOINTS := [Vector2(140, 120), Vector2(220, 120), Vector2(120, 185), Vector2(240, 185), Vector2(112, 245), Vector2(248, 245),
-	Vector2(155, 238), Vector2(205, 238), Vector2(150, 315), Vector2(210, 315), Vector2(148, 388), Vector2(212, 388)]
-const S04_DROPS := 4
-const S04_HANDS_FEET := [4, 5, 10, 11]   # the joints that count: wrists and ankles (like the mouse's feet)
+	Vector2(155, 238), Vector2(205, 238), Vector2(150, 315), Vector2(210, 315), Vector2(148, 388), Vector2(212, 388),
+	Vector2(180, 70)]
+const S04_DROPS := 5
+const S04_HANDS_FEET := [12, 4, 5, 10, 11]   # the points that count: face, wrists, ankles (the mouse: face and four feet)
 const S04_JOINT_REACH := 40.0
 const S04_BRUSH_SPEED := 420.0
-const S04_RECOGNISE_JOINTS := 4
+const S04_RECOGNISE_JOINTS := 5
 # The girl's faces, by where the story is.
 const S04_GIRL_FACES := {
 	"before": [["wink", "s04.girl_faces.01"], ["tongue", "s04.girl_faces.02"], ["headphones", "s04.girl_faces.03"], ["still", "s04.girl_faces.04"]],
@@ -2688,7 +2690,13 @@ func _s04_dab() -> void:
 	chapter_state.mark_event(&"s04_pigment_applied")
 	var hits := _s04_joint_hits()
 	chapter_state.mark_event(StringName("s04_pigment_joints_%d" % hits))
-	_show_dialogue(_t("s04.smear.done") if hits >= S04_RECOGNISE_JOINTS else _t("s04.smear.done_missed"))
+	var said := _t("s04.smear.done") if hits >= S04_RECOGNISE_JOINTS else _t("s04.smear.done_missed")
+	if s04_mouse == "table":
+		# It has watched her copy its dots; now it is off, to the visitors.
+		s04_mouse = "running"
+		s04_mouse_x = S04_BENCH_X + 30.0
+		said += "\n" + _t("s04.mouse.07")
+	_show_dialogue(said)
 	closeup_closing = true
 
 func _s04_joint_hits() -> int:
@@ -2850,6 +2858,8 @@ func _s04_joint_now(j: int, phase: float) -> Vector2:
 			p += Vector2(s * 18.0, 0)
 		5:
 			p += Vector2(s * 34.0, -maxf(0.0, s) * 14.0)
+		6:
+			p += Vector2(0, -absf(s) * 3.0)     # the face bobs a little
 	return p
 
 func _draw_point_light(cv: CanvasItem) -> void:
@@ -2943,6 +2953,8 @@ func _draw_closeup_bench(cv: CanvasItem, sz: Vector2) -> void:
 				for k in range(10):
 					var fa := k * 0.63 + t * 3.0
 					cv.draw_circle(at + Vector2(cos(fa), sin(fa)) * (30.0 + (t - 0.4) * 300.0), 3.0, Color(0.91, 0.78, 0.2, 0.8))
+	if s04_mouse == "table" and closeup_anim != "tail":
+		_draw_mouse(cv, Vector2(536, 297), 1.6, -1.0, 1.0, 1.0, false)
 	if not s04_frame_installed:
 		cv.draw_rect(Rect2(560, 180, 34, 118), _s04_c(Color("#c7a56f")), false, 6.0)
 	if s04_win_t > 0.01:
@@ -2976,6 +2988,9 @@ func _draw_closeup_smear(cv: CanvasItem, sz: Vector2) -> void:
 		cv.draw_line(Vector2(180 + side * 25, 240), Vector2(180 + side * 30, 315), Color("#3a4a5a"), 26.0)
 		cv.draw_line(Vector2(180 + side * 30, 315), Vector2(180 + side * 32, 388), Color("#3a4a5a"), 22.0)
 		cv.draw_rect(Rect2(180 + side * 32 - 16, 388, 32, 14), Color("#2a2420"), true)
+	# The mouse sits on the bench to be looked at: its yellow left only on its face and four feet.
+	if s04_mouse == "table":
+		_draw_mouse(cv, Vector2(300, 372), 2.6, -1.0, 1.0, 1.0, false)
 	# The dabs of riboflavin.
 	for d in s04_dabs:
 		var dp: Vector2 = d
@@ -4138,6 +4153,11 @@ func _finish_blue_lake_transformation() -> void:
 	queue_redraw()
 
 func _input(event: InputEvent) -> void:
+	if closeup == "smear" and not closeup_closing and closeup_anim == "" and event is InputEventMouseButton \
+			and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+		closeup_hand = _closeup_local(event.position)
+		_s04_dab()
+		return
 	if not blue_lake_active or transition_started:
 		return
 	if closeup != "":
@@ -4291,7 +4311,10 @@ func _update_closeup(delta: float) -> void:
 	closeup_t = minf(1.0, closeup_t + delta / CLOSEUP_OPEN_TIME)
 	closeup_age += delta
 	# Big close-ups: WASD moves Graham's hand over the photo or 《那喀索斯》.
-	if closeup in ["photo", "narcissus", "bench", "smear", "cleaner"] and closeup_anim == "":
+	# The riboflavin brush follows the mouse; a click puts a drop (tests set the brush directly).
+	if closeup == "smear" and dialogue_needs_e and not closeup_closing:
+		closeup_hand = _closeup_local(get_viewport().get_mouse_position()).clamp(Vector2(10, 10), CLOSEUP_RECTS["smear"].size - Vector2(10, 10))
+	if closeup in ["photo", "narcissus", "bench", "cleaner"] and closeup_anim == "":
 		var v := Input.get_vector("move_left", "move_right", "move_up", "move_down")
 		var bound: Vector2 = CLOSEUP_RECTS[closeup].size - Vector2(24, 24)
 		var speed := S04_BRUSH_SPEED if closeup == "smear" else S01_HAND_SPEED
@@ -5543,12 +5566,19 @@ func _s04_recognized() -> void:
 func _s04_check_complete() -> void:
 	if s04_finish_pending or not (s04_visitors_recognized and s04_handle_found and s04_frame_installed):
 		return
-	s04_finish_pending = true
-	var closing := _t("s04.end.01")
-	if s04_lines.is_empty():
-		_s04_say([closing])
-	else:
-		s04_lines.append(closing)
+	if s04_mouse in ["escaping", "gone"]:
+		return
+	# Frame, handle, recognised: the mouse makes a dash for 《窗》 and is out through it.
+	match s04_mouse:
+		"pacing", "running":
+			s04_mouse_x = _s04_mouse_pos().x
+		"table", "bottle":
+			s04_mouse_x = S04_BENCH_X + 20.0
+		_:
+			s04_mouse_x = S04_TWINS_X
+	s04_mouse_climb = 0.0
+	s04_mouse = "escaping"
+	chapter_state.mark_event(&"s04_mouse_escaped_through_window")
 
 func _s04_finish() -> void:
 	s04_finish_pending = false
@@ -5848,10 +5878,13 @@ func _draw_s05_item(item: Dictionary) -> void:
 				draw_colored_polygon(PackedVector2Array([Vector2(x - 26 * s, foot + 2 * s), Vector2(x + 18 * s, foot + 2 * s), Vector2(x + 26 * s, foot + 8 * s), Vector2(x - 30 * s, foot + 9 * s)]), Color(0.5, 0.75, 0.95, 0.35))
 				draw_rect(Rect2(x - 16 * s, foot - 12 * s, 20 * s, 12 * s), Color("#6f7d88"), true)
 				return
-			if s07_active and not s07_found.get("hall", true):
-				_draw_s07_egg("hall", Vector2(x + 10 * s, foot - 4 * s), 1.3)
 			draw_rect(Rect2(x - 8 * s, foot - 16 * s, 16 * s, 16 * s), Color("#6f7d88"), true)
 			draw_line(Vector2(x - 6 * s, foot), Vector2(x - 20 * s, foot + 6 * s), Color(0.5, 0.75, 0.95, 0.6), 2.0)
+			if s07_active and not s07_found.get("hall", true):
+				var b := Vector2(x + 15 * s, foot - 3 * s)
+				_draw_sparkle(self, b, 6.0 * s, true)
+				_draw_s07_egg("hall", b, 1.9 * s)
+				_draw_sparkle(self, b, 6.0 * s, false)
 		"Eyepiece":
 			draw_line(Vector2(x, foot), Vector2(x, foot - 34 * s), Color("#b08d57"), 4.0 * s)
 			draw_circle(Vector2(x, foot - 38 * s), 6.0 * s, Color("#d9b36a"))
@@ -5901,6 +5934,17 @@ func _draw_s07_egg(room: String, at: Vector2, k: float, cv: CanvasItem = null) -
 			for q in [Vector2(-1.5, -1.5), Vector2(1.5, -1.5), Vector2(-1.5, 1.5), Vector2(1.5, 1.5)]:
 				ci.draw_circle(at + q * k, 0.8 * k, blue)
 
+
+## A small thing that wants finding: a soft halo under it (`under`), and every couple of seconds a glint over it.
+func _draw_sparkle(ci: CanvasItem, at: Vector2, r: float, under: bool) -> void:
+	var ph := fmod(Time.get_ticks_msec() * 0.001, 2.2)
+	if under:
+		ci.draw_circle(at, r * 1.8, Color(0.75, 0.88, 1.0, 0.14 + 0.08 * sin(ph / 2.2 * TAU)))
+		return
+	if ph < 0.5:
+		var g := sin(ph / 0.5 * PI)
+		ci.draw_line(at - Vector2(r * 2.4 * g, 0), at + Vector2(r * 2.4 * g, 0), Color(1, 1, 1, 0.9 * g), 1.5)
+		ci.draw_line(at - Vector2(0, r * 2.4 * g), at + Vector2(0, r * 2.4 * g), Color(1, 1, 1, 0.9 * g), 1.5)
 
 ## Through the telescope, a window in focus shows a tiny view of its room and where its hidden thing is.
 func _draw_s07_window_scene(room: String, w: Rect2, cv: CanvasItem = null) -> void:
@@ -6689,7 +6733,7 @@ func _try_s05_chalk_interaction() -> void:
 	chapter_state.mark_event(&"s05_window_opened")
 	chapter_state.learn(&"s05_blue_lake_can_change_the_world")
 	chapter_state.set_player_goal(&"understand_the_window")
-	_show_dialogue(_t("s05.lake.03"))
+	_show_dialogue("")
 	objective_label.text = _t("goal.s05.04")
 	player.input_locked = true
 	s05_enter_anim = 0.0
@@ -6752,6 +6796,7 @@ func _enter_s04_after_s03() -> void:
 	s04_window = "cone"
 	s04_win_t = 0.0
 	s04_mouse = ""
+	s04_mouse_climb = 0.0
 	s04_mouse_seen = false
 	s04_mouse_hint_t = 0.0
 	s04_window_seen = false
@@ -7634,10 +7679,14 @@ func _sensor_anim_done(done: String) -> bool:
 			_show_dialogue(_t("s05.eyepiece.01"))
 			return true
 		"tail":
-			s04_mouse = "running"
-			s04_mouse_x = S04_BENCH_X + 14.0
 			chapter_state.mark_event(&"s04_mouse_caught")
-			_show_dialogue(_t("s04.mouse.01"))
+			if s04_riboflavin_applied:
+				s04_mouse = "running"
+				s04_mouse_x = S04_BENCH_X + 14.0
+				_show_dialogue(_t("s04.mouse.01_run"))
+			else:
+				s04_mouse = "table"
+				_show_dialogue(_t("s04.mouse.01"))
 			return true
 		"switch":
 			s06_lamp_on = true
@@ -8091,7 +8140,9 @@ func _draw_closeup_cleaner(cv: CanvasItem, sz: Vector2) -> void:
 		cv.draw_string(font, Vector2(214, 230), _t("sign.hall_closeup.05"), HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color("#263243"))
 	# The bucket, its crack, and the water in it: 《那喀索斯》's water.
 	if s07_active and not s07_found.get("hall", true):
+		_draw_sparkle(cv, Vector2(176, 370), 13.0, true)
 		_draw_s07_egg("hall", Vector2(176, 370), 2.4, cv)
+		_draw_sparkle(cv, Vector2(176, 370), 13.0, false)
 	var b := BUCKET_SPOT
 	cv.draw_colored_polygon(PackedVector2Array([b + Vector2(-62, -20), b + Vector2(62, -20), b + Vector2(48, 52), b + Vector2(-48, 52)]), Color("#6f7d88"))
 	cv.draw_polyline(PackedVector2Array([b + Vector2(-20, 52), b + Vector2(-14, 34), b + Vector2(-22, 20), b + Vector2(-16, 4)]), Color("#2b3138"), 2.0)
@@ -8448,6 +8499,9 @@ func _draw_mouse(ci: CanvasItem, at: Vector2, k: float, dir: float, a: float = 1
 		ci.draw_circle(at + Vector2(dir * 13.0, -8.0) * k, 0.9 * k, Color(0.75, 0.1, 0.15, a))
 		ci.draw_circle(at + Vector2(dir * 15.5, -6.5) * k, 1.0 * k, pink)
 	if glow > 0.0:
+		var nose := at + Vector2(dir * 14.0, -8.0) * k
+		ci.draw_circle(nose, 3.2 * k, Color(0.78, 1.0, 0.35, 0.2 * glow))
+		ci.draw_circle(nose, 1.3 * k, Color(0.9, 1.0, 0.5, glow))
 		for leg in _mouse_legs(at, k, dir, moving):
 			for j in [2]:
 				var p: Vector2 = leg[j]
@@ -8519,6 +8573,20 @@ func _update_s04_mouse(delta: float) -> void:
 			s04_mouse_x = move_toward(s04_mouse_x, S04_MOUSE_PACE.x, S04_MOUSE_SPEED * delta)
 			if s04_mouse_x >= S04_MOUSE_PACE.x:
 				s04_mouse = "pacing"
+		"escaping":
+			var wx := S05_WINDOW_CENTER.x
+			if absf(s04_mouse_x - wx) > 0.5:
+				s04_mouse_x = move_toward(s04_mouse_x, wx, S04_MOUSE_SPEED * 1.8 * delta)
+			else:
+				s04_mouse_climb = minf(1.0, s04_mouse_climb + delta * 1.2)
+				if s04_mouse_climb >= 1.0:
+					s04_mouse = "gone"
+					s04_finish_pending = true
+					var closing := _t("s04.end.01")
+					if s04_lines.is_empty():
+						_s04_say([closing])
+					else:
+						s04_lines.append(closing)
 		"pacing":
 			# By the visitors, to and fro. In the dark under ultraviolet only its dots show — and move.
 			if s04_uv_on and s04_win_t > 0.9 and not s04_mouse_seen and closeup == "":
@@ -8528,6 +8596,10 @@ func _update_s04_mouse(delta: float) -> void:
 
 func _s04_mouse_pos() -> Vector2:
 	match s04_mouse:
+		"table":
+			return Vector2(S04_BENCH_X + 32.0, 337.0)
+		"escaping":
+			return Vector2(s04_mouse_x, lerpf(S04_MOUSE_Y, S05_WINDOW_CENTER.y + 30.0, s04_mouse_climb))
 		"eating":
 			return Vector2(S04_TWINS_X + 2.0, 326.0)
 		"pacing":
@@ -8540,12 +8612,14 @@ func _s04_mouse_dir() -> float:
 	if s04_mouse == "pacing":
 		var span := S04_MOUSE_PACE.y - S04_MOUSE_PACE.x
 		return 1.0 if fmod(mouse_t * 70.0, span * 2.0) < span else -1.0
-	if s04_mouse == "fleeing" or s04_mouse == "eating":
+	if s04_mouse == "fleeing" or s04_mouse == "eating" or s04_mouse == "table":
 		return -1.0
+	if s04_mouse == "escaping":
+		return 1.0 if S05_WINDOW_CENTER.x >= s04_mouse_x else -1.0
 	return 1.0
 
 func _draw_s04_mouse() -> void:
-	if s04_mouse == "" or s04_mouse == "caught":
+	if s04_mouse == "" or s04_mouse == "caught" or s04_mouse == "gone":
 		return
 	if s04_mouse == "bottle":
 		# Only its tail, hanging out of the bottle's neck.
@@ -8556,8 +8630,12 @@ func _draw_s04_mouse() -> void:
 	var dark := s04_uv_on and s04_win_t > 0.6
 	var a := 0.12 if (dotted and dark) else 1.0
 	var glow := (1.0 if dark else 0.55) if dotted else 0.0
+	if s04_mouse == "table":
+		glow = 0.55
+	if s04_mouse == "escaping":
+		a = 1.0 - clampf((s04_mouse_climb - 0.7) / 0.3, 0.0, 1.0)
 	var gnaw := Vector2(0, sin(mouse_t * 18.0) * 1.0) if s04_mouse == "eating" else Vector2.ZERO
-	_draw_mouse(self, _s04_mouse_pos() + gnaw, 0.9, _s04_mouse_dir(), a, glow, s04_mouse != "eating")
+	_draw_mouse(self, _s04_mouse_pos() + gnaw, 0.9, _s04_mouse_dir(), a, glow, s04_mouse not in ["eating", "table"])
 
 func _s04_scare_mouse() -> void:
 	if s04_mouse != "eating":
