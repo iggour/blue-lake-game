@@ -122,8 +122,6 @@ func _run() -> void:
 	main.s04_girl_x = 650.0
 	await _chalk("S04Window")
 	_check(main.s04_girl_frozen and not main.s04_girl_caught, "bright too far from the restorer: frozen, not caught")
-	_check(main._s01_hyper_now().size() == 2 and main._s01_hyper_now()[0] == "painted_eye", "the freeze cuts to a hyper-real painted eye")
-	await _shot("s04_5_hyperreal_painted_eye")
 	await _wait(1.0)
 	var xf: float = main.s04_girl_x
 	await _wait(0.3)

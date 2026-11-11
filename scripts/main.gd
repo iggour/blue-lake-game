@@ -640,7 +640,7 @@ func _build_gallery() -> void:
 	# S05 hall, in depth: x is the near-plane x, z the depth (0 near .. 1 far wall); r is the reach at z = 0.
 	# S05–S08 hall, in depth: x is the near-plane x, z the depth (0 near .. 1 far wall); r is the reach at z = 0.
 	s05_hall_items = [
-		{"name":"Eyepiece", "x":S05_RAIL_X, "z":0.02, "r":40.0, "dz":0.07, "draw":true},
+		{"name":"Eyepiece", "x":S05_RAIL_X, "z":0.02, "r":110.0, "dz":0.25, "draw":true},
 		{"name":"Lens", "x":S05_RAIL_X, "z":0.34, "r":60.0, "dz":0.2, "draw":true, "inert":true},
 		{"name":"Pile", "x":470.0, "z":0.62, "r":60.0, "dz":0.12, "draw":true},
 		{"name":"Lamp", "x":340.0, "z":0.66, "r":30.0, "draw":true, "inert":true},
@@ -3505,9 +3505,6 @@ func _draw_s02_bonsai() -> void:
 			# The iron arm, free in the branches.
 			draw_line(Vector2(bx - 8, 340 + dy), Vector2(bx - 46, 334 + dy), Color("#7c4a2c"), 6.0)
 			draw_circle(Vector2(bx - 48, 333 + dy), 4.0, Color("#6a3c22"))
-	draw_line(Vector2(bx - 30, 335 + dy), Vector2(bx - 30, 343 + dy), Color("#9fb0bb"), 1.0)
-	draw_rect(Rect2(bx - 40, 343 + dy, 22, 11), Color("#cfd6d8"), true)
-	draw_string(ThemeDB.fallback_font, Vector2(bx - 39, 352 + dy), _t("sign.s02.01"), HORIZONTAL_ALIGNMENT_LEFT, -1, 8, Color("#2a3238"))
 
 func _draw_s02_runner(t: float) -> void:
 	var y0 := 392.0
@@ -5545,9 +5542,6 @@ func _s04_pull_curtain() -> void:
 		"rod":
 			_show_dialogue(_t("s04.curtain.03"))
 	if next == "cone" and s04_girl_out and not s04_girl_caught:
-		if not s04_freeze_flash_done:
-			s04_freeze_flash_done = true
-			_hyper_flash_start("painted_eye")
 		if absf(s04_girl_x - S04_RESTORER_FRONT) <= S04_CATCH_RANGE:
 			_s04_catch_girl()
 		else:
